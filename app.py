@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
@@ -20,10 +19,10 @@ tickers = stocks + crypto + bonds
 data = yf.download(tickers, start="2020-01-01", progress=False)
 
 if data.empty:
-    st.error("Market data çekilemedi")
+    st.error("Market data yüklenemedi")
     st.stop()
 
-close_prices = data["Close"]
+close_prices = data["Close"].dropna()
 
 latest_prices = close_prices.iloc[-1]
 
@@ -73,20 +72,9 @@ if st.button("Add Asset"):
             "date": str(date),
             "quantity": quantity
         })
+        st.success(f"{ticker} eklendi!")
 
 portfolio = st.session_state.portfolio
-
-# -------------------------
-# SAFE PRICE FUNCTION
-# -------------------------
-def get_price(df):
-    try:
-        if isinstance(df, pd.DataFrame):
-            return float(df["Close"].dropna().iloc[0])
-        elif isinstance(df, pd.Series):
-            return float(df.dropna().iloc[0])
-    except:
-        return None
 
 # -------------------------
 # CALCULATIONS
@@ -98,55 +86,52 @@ for asset in portfolio:
     date = asset["date"]
 
     try:
-        hist = yf.download(
+        data = yf.download(
             ticker,
             start=date,
-            end=pd.to_datetime(date) + pd.Timedelta(days=7),
+            end=pd.to_datetime(date) + pd.Timedelta(days=5),
             progress=False
         )
     except:
         continue
 
-    if hist.empty:
-        st.warning(f"Veri yok: {ticker}")
+    if data.empty or "Close" not in data:
         continue
 
-    buy_price = get_price(hist)
+    buy_price = data["Close"].iloc[0]
 
     current_data = yf.download(ticker, period="1d", progress=False)
 
     if current_data.empty:
         continue
 
-    current_price = get_price(current_data)
+    current_price = current_data["Close"].iloc[-1]
 
-    if buy_price is None or current_price is None:
+    if pd.isna(buy_price) or pd.isna(current_price):
         continue
 
-    current_value = current_price * asset["quantity"]
+    value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
 
-    asset["buy_price"] = buy_price
-    asset["current_price"] = current_price
-    asset["value"] = current_value
-    asset["cost"] = cost
-
-    valid_assets.append(asset)
+    valid_assets.append({
+        "ticker": ticker,
+        "buy_price": float(buy_price),
+        "current_price": float(current_price),
+        "quantity": asset["quantity"],
+        "value": float(value),
+        "cost": float(cost)
+    })
 
 # -------------------------
 # PORTFOLIO METRICS
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = float(np.nansum([a["value"] for a in valid_assets]))
-    total_cost = float(np.nansum([a["cost"] for a in valid_assets]))
+    total_value = float(sum(a["value"] for a in valid_assets))
+    total_cost = float(sum(a["cost"] for a in valid_assets))
 
     total_pnl = total_value - total_cost
-
-    if total_cost == 0 or pd.isna(total_cost):
-        total_pnl_pct = 0
-    else:
-        total_pnl_pct = (total_pnl / total_cost) * 100
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
 
@@ -161,24 +146,27 @@ if len(valid_assets) > 0:
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
-    labels = [a["ticker"] for a in valid_assets]
-    sizes = [a["weight"] for a in valid_assets]
-
     fig1, ax1 = plt.subplots()
-    ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
+    ax1.pie(
+        [a["weight"] for a in valid_assets],
+        labels=[a["ticker"] for a in valid_assets],
+        autopct='%1.1f%%'
+    )
     ax1.set_title("Portfolio Distribution")
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE
+    # TIME SERIES
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in valid_assets)
+    start_date = min(a["date"] for a in portfolio)
 
     price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
+
+    price_data = price_data.dropna()
 
     portfolio_value = pd.DataFrame(index=price_data.index)
 
@@ -201,7 +189,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig2)
 
     # -------------------------
-    # RISK METRICS
+    # RISK METRICS (ALPHA BETA)
     # -------------------------
     returns = price_data.pct_change().dropna()
 
@@ -229,16 +217,12 @@ if len(valid_assets) > 0:
 
     alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
-    inflation_rate = 0.03
-    real_return = expected_return - inflation_rate
-
     st.subheader("📉 Risk Metrics")
 
     st.write(f"Expected Return: {expected_return:.2%}")
     st.write(f"Volatility: {std_dev:.2%}")
     st.write(f"Beta: {beta:.2f}")
     st.write(f"Alpha: {alpha:.2%}")
-    st.write(f"Real Return (Inflation Adj): {real_return:.2%}")
 
 else:
-    st.warning("⚠️ Geçerli veri yok. Ticker veya tarih hatalı olabilir.")
+    st.warning("Geçerli veri yok. Ticker veya tarih hatalı olabilir.")
