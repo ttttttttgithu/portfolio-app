@@ -8,6 +8,45 @@ st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
+# MARKET OVERVIEW (İLK KISIM)
+# -------------------------
+st.subheader("📈 Market Overview")
+
+stocks = ["AAPL", "MSFT"]
+crypto = ["BTC-USD", "ETH-USD"]
+bonds = ["TLT", "IEF"]
+
+tickers_all = stocks + crypto + bonds
+
+data = yf.download(tickers_all, start="2020-01-01", progress=False)
+
+if not data.empty:
+    close_prices = data["Close"]
+
+    latest_prices = close_prices.iloc[-1]
+
+    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
+    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
+    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
+    df_market = pd.DataFrame({
+        "Price": latest_prices,
+        "1D %": returns_1d,
+        "1W %": returns_1w,
+        "1M %": returns_1m,
+    })
+
+    df_market["Asset Type"] = df_market.index.map(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
+
+    df_market = df_market.reset_index().rename(columns={"index": "Ticker"})
+
+    st.dataframe(df_market)
+else:
+    st.warning("Market data alınamadı")
+
+# -------------------------
 # SESSION STATE
 # -------------------------
 if "portfolio" not in st.session_state:
@@ -21,13 +60,13 @@ st.subheader("💼 Add Asset")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker (örn: AAPL, BTC-USD)").upper()
+    ticker = st.text_input("Ticker").upper()
 
 with col2:
-    date = st.date_input("Alış Tarihi")
+    date = st.date_input("Buy Date")
 
 with col3:
-    quantity = st.number_input("Miktar", min_value=0.0)
+    quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
     if ticker != "" and quantity > 0:
@@ -50,7 +89,6 @@ for asset in portfolio:
     buy_date = asset["date"]
 
     try:
-        # daha geniş aralık çek (weekend fix)
         hist = yf.download(
             ticker,
             start=buy_date - pd.Timedelta(days=5),
@@ -63,15 +101,12 @@ for asset in portfolio:
 
         hist = hist.reset_index()
 
-        # en yakın tarihi bul
         hist["diff"] = (hist["Date"] - buy_date).abs()
         row = hist.sort_values("diff").iloc[0]
 
         buy_price = float(row["Close"])
 
-        # current price
         current = yf.download(ticker, period="1d", progress=False)
-
         if current.empty:
             continue
 
@@ -96,7 +131,7 @@ for asset in portfolio:
 # OUTPUT
 # -------------------------
 if len(valid_assets) == 0:
-    st.warning("Geçerli veri yok. Ticker doğru mu? (AAPL, BTC-USD gibi)")
+    st.warning("Geçerli veri yok. Ticker doğru mu?")
     st.stop()
 
 df = pd.DataFrame(valid_assets)
@@ -180,7 +215,6 @@ cov_matrix = returns.cov()
 variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
 std_dev = np.sqrt(variance)
 
-# Beta
 portfolio_returns = portfolio_series["Total"].pct_change().dropna()
 sp500_returns = sp500.pct_change().dropna()
 
@@ -189,7 +223,6 @@ portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='
 cov = np.cov(portfolio_returns, sp500_returns)
 beta = cov[0][1] / cov[1][1]
 
-# Alpha
 risk_free = 0.02
 market_return = sp500_returns.mean() * 252
 
