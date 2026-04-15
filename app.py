@@ -85,9 +85,6 @@ for asset in portfolio:
     ticker = asset["ticker"]
     date = asset["date"]
 
-    # DEBUG
-    st.write(f"Checking: {ticker} - {date}")
-
     try:
         data = yf.download(
             ticker,
@@ -111,8 +108,12 @@ for asset in portfolio:
 
     current_price = current_data["Close"].iloc[-1]
 
-    current_value = current_price * asset["quantity"]
-    cost = buy_price * asset["quantity"]
+    # NaN kontrolü
+    if np.isnan(buy_price) or np.isnan(current_price):
+        continue
+
+    current_value = float(current_price * asset["quantity"])
+    cost = float(buy_price * asset["quantity"])
 
     asset["buy_price"] = buy_price
     asset["current_price"] = current_price
@@ -126,11 +127,15 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
+    total_value = float(np.nansum([a["value"] for a in valid_assets]))
+    total_cost = float(np.nansum([a["cost"] for a in valid_assets]))
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
+
+    if total_cost == 0 or np.isnan(total_cost):
+        total_pnl_pct = 0
+    else:
+        total_pnl_pct = (total_pnl / total_cost) * 100
 
     st.subheader("📊 Portfolio Summary")
 
@@ -185,7 +190,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig2)
 
     # -------------------------
-    # RISK METRICS (ALPHA BETA)
+    # RISK METRICS
     # -------------------------
     returns = price_data.pct_change().dropna()
 
@@ -213,9 +218,7 @@ if len(valid_assets) > 0:
 
     alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
-    # -------------------------
-    # ENFLASYON
-    # -------------------------
+    # Enflasyon
     inflation_rate = 0.03
     real_return = expected_return - inflation_rate
 
