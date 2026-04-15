@@ -78,9 +78,12 @@ for asset in portfolio:
     date = asset["date"]
 
     try:
-    data = yf.download(ticker, start=date, end=pd.to_datetime(date) + pd.Timedelta(days=5))
+    data = yf.download(ticker, start=date, end=pd.to_datetime(date) + pd.Timedelta(days=5), progress=False)
 except:
     data = pd.DataFrame()
+
+if data.empty:
+    continue
 
 if data.empty:
     continue
