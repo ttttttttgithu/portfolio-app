@@ -57,9 +57,7 @@ with col1:
 with col2:
     date = st.date_input("Buy Date")
 
-    # Gelecek tarih fix
     if date > pd.Timestamp.today().date():
-        st.warning("Gelecek tarih girdin → bugüne çekildi")
         date = pd.Timestamp.today().date()
 
 with col3:
@@ -86,25 +84,17 @@ for asset in portfolio:
     d = asset["date"]
 
     try:
-        hist = yf.download(
-            t,
-            start=d - pd.Timedelta(days=10),
-            end=d + pd.Timedelta(days=10),
-            progress=False
-        )
+        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
 
         if hist.empty:
             continue
 
         hist = hist.reset_index()
-
-        # en yakın işlem günü bul
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
         buy_price = row["Close"]
 
-        # 🔥 SERIES FIX
         if isinstance(buy_price, pd.Series):
             buy_price = buy_price.iloc[0]
 
@@ -113,7 +103,6 @@ for asset in portfolio:
 
         buy_price = float(buy_price)
 
-        # current price
         current_data = yf.download(t, period="1d", progress=False)
 
         if current_data.empty:
@@ -126,7 +115,6 @@ for asset in portfolio:
 
         current_price = cp.iloc[-1]
 
-        # 🔥 SERIES FIX
         if isinstance(current_price, pd.Series):
             current_price = current_price.iloc[0]
 
@@ -163,24 +151,17 @@ if len(valid_assets) > 0:
     c2.metric("PnL ($)", f"${total_pnl:,.2f}")
     c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
+    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
     fig1, ax1 = plt.subplots(figsize=(4,4))
-    ax1.pie(
-        [a["weight"] for a in valid_assets],
-        labels=[a["ticker"] for a in valid_assets],
-        autopct='%1.1f%%'
-    )
-    ax1.set_title("Portfolio Distribution")
+    ax1.pie([a["weight"] for a in valid_assets],
+            labels=[a["ticker"] for a in valid_assets],
+            autopct='%1.1f%%')
     st.pyplot(fig1)
 
-    # -------------------------
-    # PERFORMANCE VS S&P500
-    # -------------------------
+    # PERFORMANCE
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
@@ -199,6 +180,7 @@ if len(valid_assets) > 0:
 
     sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
+    # normalize
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
 
@@ -206,42 +188,42 @@ if len(valid_assets) > 0:
     ax2.plot(portfolio_norm, label="Portfolio")
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
-    ax2.set_title("Portfolio vs S&P 500")
     st.pyplot(fig2)
 
     # -------------------------
-    # RISK METRICS
+    # 🔥 RISK METRICS (FIXED)
     # -------------------------
-    returns = price_data.pct_change().dropna()
+    portfolio_returns = portfolio_value["Total"].pct_change()
+    sp500_returns = sp500.pct_change()
 
-    weights = np.array([a["weight"] for a in valid_assets])
-    returns = returns[[a["ticker"] for a in valid_assets]]
+    df_returns = pd.concat([portfolio_returns, sp500_returns], axis=1).dropna()
+    df_returns.columns = ["portfolio", "market"]
 
-    expected_return = np.dot(weights, returns.mean()) * 252
-    volatility = np.sqrt(np.dot(weights, np.dot(returns.cov()*252, weights)))
+    if len(df_returns) > 2:
 
-    sp500_returns = sp500.pct_change().dropna()
-    portfolio_returns = portfolio_value["Total"].pct_change().dropna()
+        cov = df_returns["portfolio"].cov(df_returns["market"])
+        var = df_returns["market"].var()
 
-    portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
+        beta = cov / var if var != 0 else 0
 
-    if len(portfolio_returns) > 1:
-        beta = np.cov(portfolio_returns, sp500_returns)[0][1] / np.var(sp500_returns)
+        expected_return = df_returns["portfolio"].mean() * 252
+        volatility = df_returns["portfolio"].std() * np.sqrt(252)
+
+        risk_free_rate = 0.02
+        market_return = df_returns["market"].mean() * 252
+
+        capm = risk_free_rate + beta * (market_return - risk_free_rate)
+        alpha = expected_return - capm
+
+        st.subheader("📉 Risk Metrics")
+        st.write(f"Expected Return: {expected_return:.2%}")
+        st.write(f"Volatility: {volatility:.2%}")
+        st.write(f"Beta: {beta:.2f}")
+        st.write(f"Alpha: {alpha:.2%}")
+        st.write(f"CAPM: {capm:.2%}")
+
     else:
-        beta = 0
-
-    risk_free_rate = 0.02
-    market_return = sp500_returns.mean() * 252
-
-    capm = risk_free_rate + beta * (market_return - risk_free_rate)
-    alpha = expected_return - capm
-
-    st.subheader("📉 Risk Metrics")
-    st.write(f"Expected Return: {expected_return:.2%}")
-    st.write(f"Volatility: {volatility:.2%}")
-    st.write(f"Beta: {beta:.2f}")
-    st.write(f"Alpha: {alpha:.2%}")
-    st.write(f"CAPM: {capm:.2%}")
+        st.warning("Risk metrics hesaplamak için yeterli veri yok")
 
 else:
     st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
