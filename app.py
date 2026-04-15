@@ -8,7 +8,7 @@ st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (ELLEME)
+# MARKET OVERVIEW
 # -------------------------
 st.subheader("📈 Market Overview")
 
@@ -72,14 +72,20 @@ if st.button("Add Asset"):
         st.session_state.portfolio.append({
             "ticker": ticker,
             "date": pd.to_datetime(date),
-            "quantity": quantity
+            "quantity": float(quantity)
         })
         st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# CALCULATIONS (FIXED)
+# HELPER (CRITICAL FIX)
+# -------------------------
+def safe_float(x):
+    return float(np.array(x).flatten()[0])
+
+# -------------------------
+# CALCULATIONS
 # -------------------------
 valid_assets = []
 
@@ -88,7 +94,6 @@ for asset in portfolio:
     buy_date = asset["date"]
 
     try:
-        # BUY PRICE (geniş aralık → weekend fix)
         hist = yf.download(
             ticker,
             start=buy_date - pd.Timedelta(days=10),
@@ -97,7 +102,6 @@ for asset in portfolio:
         )
 
         if hist.empty:
-            st.write(f"{ticker} veri alınamadı")
             continue
 
         hist = hist.reset_index()
@@ -105,18 +109,16 @@ for asset in portfolio:
         hist["diff"] = (hist["Date"] - buy_date).abs()
         row = hist.sort_values("diff").iloc[0]
 
-        buy_price = float(row["Close"])
+        buy_price = safe_float(row["Close"])
 
-        # CURRENT PRICE
         current = yf.download(ticker, period="5d", progress=False)
 
         if current.empty:
-            st.write(f"{ticker} current veri yok")
             continue
 
-        current_price = float(current["Close"].dropna().iloc[-1])
+        current_price = safe_float(current["Close"].dropna().iloc[-1])
 
-        quantity = float(asset["quantity"])
+        quantity = asset["quantity"]
 
         value = current_price * quantity
         cost = buy_price * quantity
@@ -130,15 +132,14 @@ for asset in portfolio:
             "cost": cost
         })
 
-    except Exception as e:
-        st.write(f"{ticker} hata:", e)
+    except:
         continue
 
 # -------------------------
 # OUTPUT
 # -------------------------
 if len(valid_assets) == 0:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok. Ticker doğru mu? (örn: AAPL, BTC-USD)")
     st.stop()
 
 df = pd.DataFrame(valid_assets)
@@ -157,17 +158,13 @@ col1.metric("Total Value", f"${total_value:,.2f}")
 col2.metric("PnL ($)", f"${total_pnl:,.2f}")
 col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-# -------------------------
 # TABLE
-# -------------------------
 df["PnL"] = df["value"] - df["cost"]
 df["PnL %"] = (df["PnL"] / df["cost"]) * 100
 
 st.dataframe(df)
 
-# -------------------------
-# PIE CHART
-# -------------------------
+# PIE
 df["weight"] = df["value"] / total_value
 
 fig1, ax1 = plt.subplots()
@@ -175,9 +172,7 @@ ax1.pie(df["weight"], labels=df["ticker"], autopct="%1.1f%%")
 ax1.set_title("Portfolio Distribution")
 st.pyplot(fig1)
 
-# -------------------------
 # PERFORMANCE
-# -------------------------
 tickers = df["ticker"].tolist()
 start_date = min(asset["date"] for asset in portfolio)
 
@@ -207,9 +202,7 @@ ax2.set_title("Performance vs S&P 500")
 
 st.pyplot(fig2)
 
-# -------------------------
 # RISK
-# -------------------------
 returns = prices.pct_change().dropna()
 returns = returns[df["ticker"]]
 
