@@ -59,7 +59,7 @@ if st.button("Add Asset"):
         st.session_state.portfolio.append({
             "ticker": ticker.upper(),
             "date": pd.to_datetime(date),
-            "quantity": quantity
+            "quantity": float(quantity)
         })
         st.success("Asset eklendi!")
 
@@ -73,32 +73,36 @@ valid_assets = []
 for asset in portfolio:
     ticker = asset["ticker"]
     date = asset["date"]
+    quantity = asset["quantity"]
 
     try:
-        hist = yf.download(ticker, start=date - pd.Timedelta(days=5), end=date + pd.Timedelta(days=5), progress=False)
+        hist = yf.download(
+            ticker,
+            start=date - pd.Timedelta(days=5),
+            end=date + pd.Timedelta(days=5),
+            progress=False
+        )
 
         if hist.empty:
             continue
 
-        buy_price = hist["Close"].iloc[0]
+        buy_price = float(hist["Close"].iloc[0])
 
         current_data = yf.download(ticker, period="1d", progress=False)
 
         if current_data.empty:
             continue
 
-        current_price = current_data["Close"].iloc[-1]
+        current_price = float(current_data["Close"].iloc[-1])
 
-        value = current_price * asset["quantity"]
-        cost = buy_price * asset["quantity"]
+        value = float(current_price * quantity)
+        cost = float(buy_price * quantity)
 
         valid_assets.append({
             "ticker": ticker,
             "value": value,
             "cost": cost,
-            "buy_price": buy_price,
-            "current_price": current_price,
-            "quantity": asset["quantity"]
+            "quantity": quantity
         })
 
     except:
@@ -108,14 +112,18 @@ for asset in portfolio:
 # RESULTS
 # -------------------------
 if len(valid_assets) == 0:
-    st.warning("Geçerli veri yok. Lütfen doğru ticker gir.")
+    st.warning("Geçerli veri yok. Doğru ticker ve tarih gir.")
 else:
 
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
+    total_value = float(sum(a["value"] for a in valid_assets))
+    total_cost = float(sum(a["cost"] for a in valid_assets))
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
+
+    if total_cost == 0:
+        total_pnl_pct = 0
+    else:
+        total_pnl_pct = (total_pnl / total_cost) * 100
 
     st.subheader("📊 Portfolio Summary")
 
@@ -143,7 +151,7 @@ else:
     # PERFORMANCE GRAPH
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in portfolio)
+    start_date = min(asset["date"] for asset in portfolio)
 
     price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
 
@@ -152,9 +160,12 @@ else:
 
     portfolio_value = pd.DataFrame(index=price_data.index)
 
-    for a in valid_assets:
-        if a["ticker"] in price_data.columns:
-            portfolio_value[a["ticker"]] = price_data[a["ticker"]] * a["quantity"]
+    for asset in portfolio:
+        t = asset["ticker"]
+        q = asset["quantity"]
+
+        if t in price_data.columns:
+            portfolio_value[t] = price_data[t] * q
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
@@ -180,11 +191,11 @@ else:
     returns = returns[[a["ticker"] for a in valid_assets]]
 
     mean_returns = returns.mean()
-    expected_return = np.dot(weights, mean_returns) * 252
+    expected_return = float(np.dot(weights, mean_returns) * 252)
 
     cov_matrix = returns.cov()
-    variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
-    std_dev = np.sqrt(variance)
+    variance = float(np.dot(weights, np.dot(cov_matrix, weights)) * 252)
+    std_dev = float(np.sqrt(variance))
 
     st.subheader("📉 Risk Metrics")
     st.write(f"Expected Return: {expected_return:.2%}")
