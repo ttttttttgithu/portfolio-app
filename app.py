@@ -57,6 +57,11 @@ with col1:
 with col2:
     date = st.date_input("Buy Date")
 
+    # gelecek tarih fix
+    if date > pd.Timestamp.today().date():
+        st.warning("Gelecek tarih girdin → bugüne ayarlandı")
+        date = pd.Timestamp.today().date()
+
 with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
@@ -89,11 +94,12 @@ for asset in portfolio:
         )
 
         if hist.empty:
+            st.warning(f"{t} için veri yok")
             continue
 
         hist = hist.reset_index()
 
-        # en yakın tarih
+        # en yakın işlem günü
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
@@ -162,7 +168,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE
+    # PERFORMANCE VS S&P500
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
