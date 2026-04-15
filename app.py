@@ -68,7 +68,7 @@ with col3:
 if st.button("Add Asset"):
     if ticker != "" and quantity > 0:
         st.session_state.portfolio.append({
-            "ticker": ticker.upper(),
+            "ticker": ticker.upper().strip(),
             "date": str(date),
             "quantity": quantity
         })
@@ -93,13 +93,18 @@ for asset in portfolio:
             progress=False
         )
     except:
-        continue
+        data = pd.DataFrame()
+
+    # 🔥 fallback (kritik)
+    if data.empty or "Close" not in data:
+        data = yf.download(ticker, period="7d", progress=False)
 
     if data.empty or "Close" not in data:
+        st.warning(f"{ticker} veri alınamadı")
         continue
 
     try:
-        buy_price = float(data["Close"].iloc[0])
+        buy_price = float(data["Close"].dropna().iloc[0])
     except:
         continue
 
@@ -113,7 +118,6 @@ for asset in portfolio:
     except:
         continue
 
-    # kritik fix (artık scalar)
     if np.isnan(buy_price) or np.isnan(current_price):
         continue
 
@@ -160,7 +164,9 @@ if len(valid_assets) > 0:
     ax1.set_title("Portfolio Distribution")
     st.pyplot(fig1)
 
+    # -------------------------
     # TIME SERIES
+    # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in portfolio)
 
@@ -191,7 +197,9 @@ if len(valid_assets) > 0:
     ax2.set_title("Portfolio vs S&P 500")
     st.pyplot(fig2)
 
-    # RISK
+    # -------------------------
+    # RISK METRICS
+    # -------------------------
     returns = price_data.pct_change().dropna()
 
     weights = np.array([a["weight"] for a in valid_assets])
@@ -217,11 +225,12 @@ if len(valid_assets) > 0:
     alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
     st.subheader("📉 Risk Metrics")
-
     st.write(f"Expected Return: {expected_return:.2%}")
     st.write(f"Volatility: {std_dev:.2%}")
     st.write(f"Beta: {beta:.2f}")
     st.write(f"Alpha: {alpha:.2%}")
 
 else:
-    st.warning("Geçerli veri yok. Ticker veya tarih hatalı olabilir.")
+    st.error("⚠️ Geçerli veri yok. Lütfen şu formatta gir:")
+    st.write("AAPL / MSFT / BTC-USD / ETH-USD")
+    st.write("Tarih: weekday seç (örn: 2023-01-10)")
