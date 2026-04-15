@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
-
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
@@ -79,7 +78,7 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# SHOW PORTFOLIO (ÖNEMLİ)
+# SHOW PORTFOLIO
 # -------------------------
 st.subheader("📋 Current Portfolio")
 
@@ -151,22 +150,24 @@ if len(valid_assets) > 0:
     col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
     # -------------------------
-    # PIE CHART
+    # WEIGHTS
     # -------------------------
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
+    # -------------------------
+    # PIE CHART
+    # -------------------------
     labels = [a["ticker"] for a in valid_assets]
     sizes = [a["weight"] for a in valid_assets]
 
     fig1, ax1 = plt.subplots()
     ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
     ax1.set_title("Portfolio Distribution")
-
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE VS S&P500
+    # PRICE DATA
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
@@ -184,6 +185,9 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
+    # -------------------------
+    # S&P500
+    # -------------------------
     sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
@@ -194,11 +198,10 @@ if len(valid_assets) > 0:
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
     ax2.set_title("Portfolio vs S&P 500")
-
     st.pyplot(fig2)
 
     # -------------------------
-    # RISK METRICS
+    # RETURNS
     # -------------------------
     returns = price_data.pct_change().dropna()
 
@@ -215,6 +218,70 @@ if len(valid_assets) > 0:
     st.subheader("📉 Risk Metrics")
     st.write(f"Expected Return: {expected_return:.2%}")
     st.write(f"Volatility: {std_dev:.2%}")
+
+    # -------------------------
+    # ALPHA BETA CAPM
+    # -------------------------
+    sp500_returns = sp500.pct_change().dropna()
+    portfolio_returns = portfolio_value["Total"].pct_change().dropna()
+
+    portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
+
+    if len(portfolio_returns) > 0:
+        cov_matrix = np.cov(portfolio_returns, sp500_returns)
+
+        beta = cov_matrix[0][1] / cov_matrix[1][1]
+
+        risk_free_rate = 0.02
+        market_return = sp500_returns.mean() * 252
+
+        alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
+        capm_return = risk_free_rate + beta * (market_return - risk_free_rate)
+
+        st.subheader("📊 Advanced Metrics")
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Beta", f"{beta:.2f}")
+        col2.metric("Alpha", f"{alpha:.2%}")
+        col3.metric("CAPM Return", f"{capm_return:.2%}")
+
+    # -------------------------
+    # CUMULATIVE RETURNS
+    # -------------------------
+    returns_pct = portfolio_value["Total"].pct_change().fillna(0)
+    cumulative_returns = (1 + returns_pct).cumprod() * 100
+
+    fig3, ax3 = plt.subplots()
+    ax3.plot(cumulative_returns, label="Portfolio (%)")
+    ax3.set_title("Cumulative Return")
+    ax3.legend()
+    st.pyplot(fig3)
+
+    # -------------------------
+    # INFLATION ADJUSTED
+    # -------------------------
+    inflation_rate = 0.03
+    daily_inflation = (1 + inflation_rate) ** (1/252) - 1
+
+    inflation_series = (1 + daily_inflation) ** np.arange(len(cumulative_returns))
+    real_returns = cumulative_returns / inflation_series
+
+    fig4, ax4 = plt.subplots()
+    ax4.plot(real_returns, label="Real Return")
+    ax4.legend()
+    ax4.set_title("Inflation Adjusted Return")
+    st.pyplot(fig4)
+
+    # -------------------------
+    # COMBINED
+    # -------------------------
+    fig5, ax5 = plt.subplots()
+    ax5.plot(cumulative_returns, label="Portfolio (Nominal)")
+    ax5.plot(real_returns, label="Portfolio (Real)")
+    ax5.plot(sp500_norm, label="S&P 500")
+    ax5.legend()
+    ax5.set_title("Portfolio vs Market vs Inflation")
+    st.pyplot(fig5)
 
 else:
     st.warning("Geçerli veri yok veya henüz hesaplanamadı.")
