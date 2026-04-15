@@ -16,27 +16,29 @@ bonds = ["TLT", "IEF"]
 tickers = stocks + crypto + bonds
 
 data = yf.download(tickers, period="1mo", progress=False)
-close_prices = data["Close"]
 
-latest_prices = close_prices.iloc[-1]
-returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+if not data.empty:
+    close_prices = data["Close"]
 
-df = pd.DataFrame({
-    "Ticker": latest_prices.index,
-    "Price": latest_prices.values,
-    "1D %": returns_1d.values,
-    "1W %": returns_1w.values,
-    "1M %": returns_1m.values
-})
+    latest_prices = close_prices.iloc[-1]
+    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
+    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
+    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
 
-df["Asset Type"] = df["Ticker"].apply(
-    lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-)
+    df = pd.DataFrame({
+        "Ticker": latest_prices.index,
+        "Price": latest_prices.values,
+        "1D %": returns_1d.values,
+        "1W %": returns_1w.values,
+        "1M %": returns_1m.values
+    })
 
-st.subheader("📈 Market Overview")
-st.dataframe(df)
+    df["Asset Type"] = df["Ticker"].apply(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
+
+    st.subheader("📈 Market Overview")
+    st.dataframe(df)
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -49,7 +51,8 @@ if "portfolio" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker (örn: AAPL)").upper()
+    ticker = st.text_input("Ticker (örn: AAPL)")
+    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
 
 with col2:
     date = st.date_input("Buy Date")
@@ -80,8 +83,8 @@ for asset in portfolio:
     try:
         hist = yf.download(
             t,
-            start=d - pd.Timedelta(days=7),
-            end=d + pd.Timedelta(days=7),
+            start=d - pd.Timedelta(days=10),
+            end=d + pd.Timedelta(days=10),
             progress=False
         )
 
@@ -90,13 +93,12 @@ for asset in portfolio:
 
         hist = hist.reset_index()
 
-        # en yakın günü bul
-        hist["diff"] = abs(hist["Date"] - d)
+        # en yakın tarih
+        hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
         buy_price = row["Close"]
 
-        # Series fix
         if isinstance(buy_price, pd.Series):
             buy_price = buy_price.values[0]
 
@@ -160,7 +162,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE VS S&P500
+    # PERFORMANCE
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
@@ -206,7 +208,10 @@ if len(valid_assets) > 0:
 
     portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
 
-    beta = np.cov(portfolio_returns, sp500_returns)[0][1] / np.var(sp500_returns)
+    if len(portfolio_returns) > 1:
+        beta = np.cov(portfolio_returns, sp500_returns)[0][1] / np.var(sp500_returns)
+    else:
+        beta = 0
 
     risk_free_rate = 0.02
     market_return = sp500_returns.mean() * 252
