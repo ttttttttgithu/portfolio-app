@@ -16,10 +16,14 @@ bonds = ["TLT", "IEF"]
 tickers = stocks + crypto + bonds
 
 data = yf.download(tickers, start="2020-01-01", progress=False)
+
+if "Close" not in data:
+    st.error("Market data alınamadı")
+    st.stop()
+
 close_prices = data["Close"]
 
 latest_prices = close_prices.iloc[-1]
-
 returns_1d = close_prices.pct_change(1).iloc[-1] * 100
 returns_1w = close_prices.pct_change(5).iloc[-1] * 100
 returns_1m = close_prices.pct_change(21).iloc[-1] * 100
@@ -60,9 +64,9 @@ with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
-    if ticker != "":
+    if ticker != "" and quantity > 0:
         st.session_state.portfolio.append({
-            "ticker": ticker,
+            "ticker": ticker.upper(),
             "date": str(date),
             "quantity": quantity
         })
@@ -88,17 +92,20 @@ for asset in portfolio:
     except:
         data = pd.DataFrame()
 
-    if data.empty:
+    if data.empty or "Close" not in data:
         continue
 
-    buy_price = data["Close"].iloc[0]
+    try:
+        buy_price = float(data["Close"].iloc[0])
+    except:
+        continue
 
     current_data = yf.download(ticker, period="1d", progress=False)
 
-    if current_data.empty:
+    if current_data.empty or "Close" not in current_data:
         continue
 
-    current_price = current_data["Close"].iloc[-1]
+    current_price = float(current_data["Close"].iloc[-1])
 
     current_value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
@@ -115,18 +122,21 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
+    total_value = float(sum(a["value"] for a in valid_assets))
+    total_cost = float(sum(a["cost"] for a in valid_assets))
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
+
     st.metric("Total Value", f"${total_value:,.2f}")
     st.metric("PnL ($)", f"${total_pnl:,.2f}")
     st.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # PIE
+    # -------------------------
+    # PIE CHART
+    # -------------------------
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -135,9 +145,13 @@ if len(valid_assets) > 0:
 
     fig1, ax1 = plt.subplots()
     ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
+    ax1.set_title("Portfolio Distribution")
+
     st.pyplot(fig1)
 
-    # PERFORMANCE
+    # -------------------------
+    # PERFORMANCE VS S&P500
+    # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
@@ -163,10 +177,15 @@ if len(valid_assets) > 0:
     ax2.plot(portfolio_norm, label="Portfolio")
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
+    ax2.set_title("Portfolio vs S&P 500")
+
     st.pyplot(fig2)
 
-    # RISK
+    # -------------------------
+    # RISK METRICS
+    # -------------------------
     returns = price_data.pct_change().dropna()
+
     weights = np.array([a["weight"] for a in valid_assets])
     returns = returns[[a["ticker"] for a in valid_assets]]
 
@@ -174,7 +193,8 @@ if len(valid_assets) > 0:
     expected_return = np.dot(weights, mean_returns) * 252
 
     cov_matrix = returns.cov()
-    std_dev = np.sqrt(np.dot(weights, np.dot(cov_matrix, weights)) * 252)
+    variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
+    std_dev = np.sqrt(variance)
 
     st.subheader("📉 Risk Metrics")
     st.write(f"Expected Return: {expected_return:.2%}")
