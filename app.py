@@ -77,6 +77,18 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
+# SAFE PRICE FUNCTION
+# -------------------------
+def get_price(df):
+    try:
+        if isinstance(df, pd.DataFrame):
+            return float(df["Close"].dropna().iloc[0])
+        elif isinstance(df, pd.Series):
+            return float(df.dropna().iloc[0])
+    except:
+        return None
+
+# -------------------------
 # CALCULATIONS
 # -------------------------
 valid_assets = []
@@ -86,34 +98,33 @@ for asset in portfolio:
     date = asset["date"]
 
     try:
-        data = yf.download(
+        hist = yf.download(
             ticker,
             start=date,
             end=pd.to_datetime(date) + pd.Timedelta(days=7),
             progress=False
         )
     except:
-        data = pd.DataFrame()
+        continue
 
-    if data.empty:
+    if hist.empty:
         st.warning(f"Veri yok: {ticker}")
         continue
 
-    buy_price = data["Close"].iloc[0]
+    buy_price = get_price(hist)
 
     current_data = yf.download(ticker, period="1d", progress=False)
 
     if current_data.empty:
         continue
 
-    current_price = current_data["Close"].iloc[-1]
+    current_price = get_price(current_data)
 
-    # NaN kontrolü
-    if np.isnan(buy_price) or np.isnan(current_price):
+    if buy_price is None or current_price is None:
         continue
 
-    current_value = float(current_price * asset["quantity"])
-    cost = float(buy_price * asset["quantity"])
+    current_value = current_price * asset["quantity"]
+    cost = buy_price * asset["quantity"]
 
     asset["buy_price"] = buy_price
     asset["current_price"] = current_price
@@ -132,7 +143,7 @@ if len(valid_assets) > 0:
 
     total_pnl = total_value - total_cost
 
-    if total_cost == 0 or np.isnan(total_cost):
+    if total_cost == 0 or pd.isna(total_cost):
         total_pnl_pct = 0
     else:
         total_pnl_pct = (total_pnl / total_cost) * 100
@@ -159,7 +170,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE VS S&P500
+    # PERFORMANCE
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
@@ -218,7 +229,6 @@ if len(valid_assets) > 0:
 
     alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
-    # Enflasyon
     inflation_rate = 0.03
     real_return = expected_return - inflation_rate
 
