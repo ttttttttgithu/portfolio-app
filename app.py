@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
@@ -16,35 +15,32 @@ bonds = ["TLT", "IEF"]
 
 tickers = stocks + crypto + bonds
 
-data = yf.download(tickers, period="1y", progress=False)
+data = yf.download(tickers, start="2020-01-01", progress=False)
 
-if data.empty:
-    st.error("Market data alınamadı")
-    st.stop()
+if not data.empty:
+    close_prices = data["Close"]
 
-close_prices = data["Close"].dropna()
+    latest_prices = close_prices.iloc[-1]
 
-latest_prices = close_prices.iloc[-1]
+    returns_1d = close_prices.pct_change().iloc[-1] * 100
+    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
+    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
 
-returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+    df = pd.DataFrame({
+        "Price": latest_prices,
+        "1D %": returns_1d,
+        "1W %": returns_1w,
+        "1M %": returns_1m,
+    })
 
-df = pd.DataFrame({
-    "Price": latest_prices,
-    "1D %": returns_1d,
-    "1W %": returns_1w,
-    "1M %": returns_1m,
-})
+    df["Asset Type"] = df.index.map(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
 
-df["Asset Type"] = df.index.map(
-    lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-)
+    df = df.reset_index().rename(columns={"index": "Ticker"})
 
-df = df.reset_index().rename(columns={"index": "Ticker"})
-
-st.subheader("📈 Market Overview")
-st.dataframe(df)
+    st.subheader("📈 Market Overview")
+    st.dataframe(df)
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -54,25 +50,18 @@ st.subheader("💼 Add Portfolio")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    ticker = st.text_input("Ticker")
-
-with col2:
-    date = st.date_input("Buy Date")
-
-with col3:
-    quantity = st.number_input("Quantity", min_value=0.0)
+ticker = st.text_input("Ticker (örn: AAPL, MSFT, BTC-USD)")
+date = st.date_input("Buy Date")
+quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
     if ticker != "" and quantity > 0:
         st.session_state.portfolio.append({
-            "ticker": ticker.upper().strip(),
-            "date": str(date),
+            "ticker": ticker.upper(),
+            "date": pd.to_datetime(date),
             "quantity": quantity
         })
-        st.success(f"{ticker} eklendi!")
+        st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
 
@@ -83,61 +72,60 @@ valid_assets = []
 
 for asset in portfolio:
     ticker = asset["ticker"]
-    date = pd.to_datetime(asset["date"])
+    date = asset["date"]
 
     try:
-        hist = yf.Ticker(ticker).history(period="1y")
+        hist = yf.download(ticker, start=date - pd.Timedelta(days=5), end=date + pd.Timedelta(days=5), progress=False)
+
+        if hist.empty:
+            continue
+
+        buy_price = hist["Close"].iloc[0]
+
+        current_data = yf.download(ticker, period="1d", progress=False)
+
+        if current_data.empty:
+            continue
+
+        current_price = current_data["Close"].iloc[-1]
+
+        value = current_price * asset["quantity"]
+        cost = buy_price * asset["quantity"]
+
+        valid_assets.append({
+            "ticker": ticker,
+            "value": value,
+            "cost": cost,
+            "buy_price": buy_price,
+            "current_price": current_price,
+            "quantity": asset["quantity"]
+        })
+
     except:
         continue
 
-    if hist.empty:
-        st.warning(f"{ticker} veri alınamadı")
-        continue
-
-    hist = hist.reset_index()
-    hist["Date"] = pd.to_datetime(hist["Date"])
-
-    # en yakın tarihi bul
-    hist["diff"] = abs(hist["Date"] - date)
-    closest_row = hist.loc[hist["diff"].idxmin()]
-
-    buy_price = float(closest_row["Close"])
-    current_price = float(hist["Close"].iloc[-1])
-
-    if np.isnan(buy_price) or np.isnan(current_price):
-        continue
-
-    value = current_price * asset["quantity"]
-    cost = buy_price * asset["quantity"]
-
-    valid_assets.append({
-        "ticker": ticker,
-        "buy_price": buy_price,
-        "current_price": current_price,
-        "quantity": asset["quantity"],
-        "value": value,
-        "cost": cost
-    })
-
 # -------------------------
-# PORTFOLIO METRICS
+# RESULTS
 # -------------------------
-if len(valid_assets) > 0:
+if len(valid_assets) == 0:
+    st.warning("Geçerli veri yok. Lütfen doğru ticker gir.")
+else:
 
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
 
     st.subheader("📊 Portfolio Summary")
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Value", f"${total_value:,.2f}")
-    col2.metric("PnL ($)", f"${total_pnl:,.2f}")
-    col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+    st.metric("Total Value", f"${total_value:,.2f}")
+    st.metric("PnL ($)", f"${total_pnl:,.2f}")
+    st.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # PIE
+    # -------------------------
+    # PIE CHART
+    # -------------------------
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -145,22 +133,22 @@ if len(valid_assets) > 0:
     ax1.pie(
         [a["weight"] for a in valid_assets],
         labels=[a["ticker"] for a in valid_assets],
-        autopct='%1.1f%%'
+        autopct="%1.1f%%"
     )
     ax1.set_title("Portfolio Distribution")
+
     st.pyplot(fig1)
 
     # -------------------------
-    # TIME SERIES
+    # PERFORMANCE GRAPH
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
+    start_date = min(a["date"] for a in portfolio)
 
-    price_data = yf.download(tickers, period="1y", progress=False)["Close"]
+    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
-
-    price_data = price_data.dropna()
 
     portfolio_value = pd.DataFrame(index=price_data.index)
 
@@ -170,7 +158,7 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    sp500 = yf.download("^GSPC", period="1y", progress=False)["Close"]
+    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
@@ -179,7 +167,8 @@ if len(valid_assets) > 0:
     ax2.plot(portfolio_norm, label="Portfolio")
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
-    ax2.set_title("Portfolio vs S&P 500")
+    ax2.set_title("Performance vs S&P 500")
+
     st.pyplot(fig2)
 
     # -------------------------
@@ -197,25 +186,6 @@ if len(valid_assets) > 0:
     variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
     std_dev = np.sqrt(variance)
 
-    sp500_returns = sp500.pct_change().dropna()
-    portfolio_returns = portfolio_value["Total"].pct_change().dropna()
-
-    portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
-
-    cov = np.cov(portfolio_returns, sp500_returns)
-    beta = cov[0][1] / cov[1][1]
-
-    risk_free_rate = 0.02
-    market_return = sp500_returns.mean() * 252
-    alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
-
     st.subheader("📉 Risk Metrics")
     st.write(f"Expected Return: {expected_return:.2%}")
     st.write(f"Volatility: {std_dev:.2%}")
-    st.write(f"Beta: {beta:.2f}")
-    st.write(f"Alpha: {alpha:.2%}")
-
-else:
-    st.error("⚠️ Veri alınamadı. Şunları dene:")
-    st.write("- AAPL / MSFT / BTC-USD")
-    st.write("- Tarih: son 1 yıl içinde olsun")
