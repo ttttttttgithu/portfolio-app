@@ -15,7 +15,7 @@ bonds = ["TLT", "IEF"]
 
 tickers = stocks + crypto + bonds
 
-data = yf.download(tickers, start="2020-01-01")
+data = yf.download(tickers, start="2020-01-01", progress=False)
 close_prices = data["Close"]
 
 latest_prices = close_prices.iloc[-1]
@@ -51,7 +51,7 @@ if "portfolio" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker", key="ticker")
+    ticker = st.text_input("Ticker")
 
 with col2:
     date = st.date_input("Buy Date")
@@ -60,11 +60,12 @@ with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
-    st.session_state.portfolio.append({
-        "ticker": ticker,
-        "date": str(date),
-        "quantity": quantity
-    })
+    if ticker != "":
+        st.session_state.portfolio.append({
+            "ticker": ticker,
+            "date": str(date),
+            "quantity": quantity
+        })
 
 portfolio = st.session_state.portfolio
 
@@ -78,32 +79,25 @@ for asset in portfolio:
     date = asset["date"]
 
     try:
-    data = yf.download(
-        ticker,
-        start=date,
-        end=pd.to_datetime(date) + pd.Timedelta(days=5),
-        progress=False
-    )
-except:
-    data = pd.DataFrame()
-
-if data.empty:
-    continue
-except:
-    data = pd.DataFrame()
-
-if data.empty:
-    continue
-
-if data.empty:
-    continue
+        data = yf.download(
+            ticker,
+            start=date,
+            end=pd.to_datetime(date) + pd.Timedelta(days=5),
+            progress=False
+        )
+    except:
+        data = pd.DataFrame()
 
     if data.empty:
         continue
 
     buy_price = data["Close"].iloc[0]
 
-    current_data = yf.download(ticker, period="1d")
+    current_data = yf.download(ticker, period="1d", progress=False)
+
+    if current_data.empty:
+        continue
+
     current_price = current_data["Close"].iloc[-1]
 
     current_value = current_price * asset["quantity"]
@@ -125,21 +119,14 @@ if len(valid_assets) > 0:
     total_cost = sum(a["cost"] for a in valid_assets)
 
     total_pnl = total_value - total_cost
-
-    if total_cost != 0:
-        total_pnl_pct = (total_pnl / total_cost) * 100
-    else:
-        total_pnl_pct = 0
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
 
     st.subheader("📊 Portfolio Summary")
-
     st.metric("Total Value", f"${total_value:,.2f}")
     st.metric("PnL ($)", f"${total_pnl:,.2f}")
     st.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
+    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -148,17 +135,13 @@ if len(valid_assets) > 0:
 
     fig1, ax1 = plt.subplots()
     ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
-    ax1.set_title("Portfolio Distribution")
-
     st.pyplot(fig1)
 
-    # -------------------------
-    # PERFORMANCE VS S&P500
-    # -------------------------
+    # PERFORMANCE
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
-    price_data = yf.download(tickers, start=start_date)["Close"]
+    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
@@ -171,7 +154,7 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    sp500 = yf.download("^GSPC", start=start_date)["Close"]
+    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
@@ -180,15 +163,10 @@ if len(valid_assets) > 0:
     ax2.plot(portfolio_norm, label="Portfolio")
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
-    ax2.set_title("Portfolio vs S&P 500")
-
     st.pyplot(fig2)
 
-    # -------------------------
-    # RISK METRICS
-    # -------------------------
+    # RISK
     returns = price_data.pct_change().dropna()
-
     weights = np.array([a["weight"] for a in valid_assets])
     returns = returns[[a["ticker"] for a in valid_assets]]
 
@@ -196,8 +174,7 @@ if len(valid_assets) > 0:
     expected_return = np.dot(weights, mean_returns) * 252
 
     cov_matrix = returns.cov()
-    variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
-    std_dev = np.sqrt(variance)
+    std_dev = np.sqrt(np.dot(weights, np.dot(cov_matrix, weights)) * 252)
 
     st.subheader("📉 Risk Metrics")
     st.write(f"Expected Return: {expected_return:.2%}")
