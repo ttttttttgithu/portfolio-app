@@ -19,7 +19,7 @@ tickers = stocks + crypto + bonds
 data = yf.download(tickers, start="2020-01-01", progress=False)
 
 if data.empty:
-    st.error("Market data yüklenemedi")
+    st.error("Market data alınamadı")
     st.stop()
 
 close_prices = data["Close"].dropna()
@@ -98,16 +98,23 @@ for asset in portfolio:
     if data.empty or "Close" not in data:
         continue
 
-    buy_price = data["Close"].iloc[0]
+    try:
+        buy_price = float(data["Close"].iloc[0])
+    except:
+        continue
 
     current_data = yf.download(ticker, period="1d", progress=False)
 
-    if current_data.empty:
+    if current_data.empty or "Close" not in current_data:
         continue
 
-    current_price = current_data["Close"].iloc[-1]
+    try:
+        current_price = float(current_data["Close"].iloc[-1])
+    except:
+        continue
 
-    if pd.isna(buy_price) or pd.isna(current_price):
+    # kritik fix (artık scalar)
+    if np.isnan(buy_price) or np.isnan(current_price):
         continue
 
     value = current_price * asset["quantity"]
@@ -115,11 +122,11 @@ for asset in portfolio:
 
     valid_assets.append({
         "ticker": ticker,
-        "buy_price": float(buy_price),
-        "current_price": float(current_price),
+        "buy_price": buy_price,
+        "current_price": current_price,
         "quantity": asset["quantity"],
-        "value": float(value),
-        "cost": float(cost)
+        "value": value,
+        "cost": cost
     })
 
 # -------------------------
@@ -140,9 +147,7 @@ if len(valid_assets) > 0:
     col2.metric("PnL ($)", f"${total_pnl:,.2f}")
     col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
+    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -155,9 +160,7 @@ if len(valid_assets) > 0:
     ax1.set_title("Portfolio Distribution")
     st.pyplot(fig1)
 
-    # -------------------------
     # TIME SERIES
-    # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in portfolio)
 
@@ -188,9 +191,7 @@ if len(valid_assets) > 0:
     ax2.set_title("Portfolio vs S&P 500")
     st.pyplot(fig2)
 
-    # -------------------------
-    # RISK METRICS (ALPHA BETA)
-    # -------------------------
+    # RISK
     returns = price_data.pct_change().dropna()
 
     weights = np.array([a["weight"] for a in valid_assets])
@@ -209,12 +210,10 @@ if len(valid_assets) > 0:
     portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
 
     cov = np.cov(portfolio_returns, sp500_returns)
-
     beta = cov[0][1] / cov[1][1]
 
     risk_free_rate = 0.02
     market_return = sp500_returns.mean() * 252
-
     alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
     st.subheader("📉 Risk Metrics")
