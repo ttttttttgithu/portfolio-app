@@ -22,23 +22,16 @@ data = yf.download(tickers, start="2020-01-01", progress=False)
 if not data.empty:
     close_prices = data["Close"]
 
-    latest_prices = close_prices.iloc[-1]
-    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
-
     df = pd.DataFrame({
-        "Price": latest_prices,
-        "1D %": returns_1d,
-        "1W %": returns_1w,
-        "1M %": returns_1m,
+        "Price": close_prices.iloc[-1],
+        "1D %": close_prices.pct_change(1).iloc[-1] * 100,
+        "1W %": close_prices.pct_change(5).iloc[-1] * 100,
+        "1M %": close_prices.pct_change(21).iloc[-1] * 100,
     })
 
     df["Asset Type"] = df.index.map(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
-
-    df = df.reset_index().rename(columns={"index": "Ticker"})
 
     st.subheader("📈 Market Overview")
     st.dataframe(df)
@@ -51,16 +44,9 @@ st.subheader("💼 Add Portfolio")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    ticker = st.text_input("Ticker (örn: AAPL, BTC-USD)").upper()
-
-with col2:
-    date = st.date_input("Buy Date")
-
-with col3:
-    quantity = st.number_input("Quantity", min_value=0.0)
+ticker = st.text_input("Ticker (örn: AAPL, BTC-USD)").upper()
+date = st.date_input("Buy Date")
+quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
     if ticker != "" and quantity > 0:
@@ -79,30 +65,37 @@ portfolio = st.session_state.portfolio
 valid_assets = []
 
 for asset in portfolio:
-    try:
-        ticker = asset["ticker"]
-        date = asset["date"]
+    ticker = asset["ticker"]
+    date = asset["date"]
 
-        # BUY PRICE (tarih + tolerance)
+    try:
+        # 🔥 BUY PRICE (fallback sistem)
         data = yf.download(
             ticker,
             start=date,
-            end=date + pd.Timedelta(days=7),
+            end=date + pd.Timedelta(days=10),
             progress=False
         )
 
         if data.empty:
+            # fallback → son 1 aydan ilk price al
+            data = yf.download(ticker, period="1mo", progress=False)
+
+        if data.empty:
             continue
 
-        buy_price = float(data["Close"].iloc[0])
+        buy_price = float(data["Close"].dropna().iloc[0])
 
-        # CURRENT PRICE
+        # 🔥 CURRENT PRICE
         current_data = yf.download(ticker, period="1d", progress=False)
+
+        if current_data.empty:
+            current_data = yf.download(ticker, period="5d", progress=False)
 
         if current_data.empty:
             continue
 
-        current_price = float(current_data["Close"].iloc[-1])
+        current_price = float(current_data["Close"].dropna().iloc[-1])
 
         value = current_price * asset["quantity"]
         cost = buy_price * asset["quantity"]
@@ -115,7 +108,8 @@ for asset in portfolio:
             "cost": cost
         })
 
-    except:
+    except Exception as e:
+        st.write(f"Hata ({ticker}):", e)
         continue
 
 # -------------------------
@@ -123,11 +117,11 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
+    total_value = float(sum(a["value"] for a in valid_assets))
+    total_cost = float(sum(a["cost"] for a in valid_assets))
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost * 100) if total_cost != 0 else 0
+    total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
 
@@ -148,54 +142,49 @@ if len(valid_assets) > 0:
     fig1, ax1 = plt.subplots(figsize=(4,4))
     ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
     ax1.set_title("Portfolio Distribution")
-
     st.pyplot(fig1)
 
     # -------------------------
-    # PERFORMANCE VS S&P500
+    # PERFORMANCE
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
-    start_date = min(asset["date"] for asset in portfolio)
 
-    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
+    price_data = yf.download(tickers, period="1y", progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
 
-    portfolio_value = pd.DataFrame(index=price_data.index)
+    portfolio_value = price_data.copy()
 
     for a in valid_assets:
-        if a["ticker"] in price_data.columns:
-            portfolio_value[a["ticker"]] = price_data[a["ticker"]] * (a["value"] / a["current_price"])
+        if a["ticker"] in portfolio_value.columns:
+            qty = a["value"] / a["current_price"]
+            portfolio_value[a["ticker"]] *= qty
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
-
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
-    sp500_norm = sp500 / sp500.iloc[0] * 100
 
     fig2, ax2 = plt.subplots(figsize=(6,3))
     ax2.plot(portfolio_norm, label="Portfolio")
-    ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
-    ax2.set_title("Portfolio vs S&P 500")
-
+    ax2.set_title("Portfolio Performance")
     st.pyplot(fig2)
 
     # -------------------------
-    # RISK METRICS
+    # RISK
     # -------------------------
     returns = price_data.pct_change().dropna()
 
-    weights = np.array([a["weight"] for a in valid_assets])
     returns = returns[[a["ticker"] for a in valid_assets]]
 
+    weights = np.array([a["weight"] for a in valid_assets])
+
     mean_returns = returns.mean()
-    expected_return = np.dot(weights, mean_returns) * 252
+    expected_return = float(np.dot(weights, mean_returns) * 252)
 
     cov_matrix = returns.cov()
-    variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
+    variance = float(np.dot(weights, np.dot(cov_matrix, weights)) * 252)
     std_dev = np.sqrt(variance)
 
     st.subheader("📉 Risk Metrics")
