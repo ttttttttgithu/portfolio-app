@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
+
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
@@ -42,7 +44,7 @@ df["Asset Type"] = df.index.map(
 df = df.reset_index().rename(columns={"index": "Ticker"})
 
 st.subheader("📈 Market Overview")
-st.dataframe(df)
+st.dataframe(df, use_container_width=True)
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -70,8 +72,21 @@ if st.button("Add Asset"):
             "date": str(date),
             "quantity": quantity
         })
+        st.success("✅ Asset eklendi!")
+    else:
+        st.warning("Ticker boş olamaz ve quantity > 0 olmalı")
 
 portfolio = st.session_state.portfolio
+
+# -------------------------
+# SHOW PORTFOLIO (ÖNEMLİ)
+# -------------------------
+st.subheader("📋 Current Portfolio")
+
+if len(portfolio) > 0:
+    st.dataframe(pd.DataFrame(portfolio), use_container_width=True)
+else:
+    st.info("Henüz asset eklenmedi.")
 
 # -------------------------
 # CALCULATIONS
@@ -130,9 +145,10 @@ if len(valid_assets) > 0:
 
     st.subheader("📊 Portfolio Summary")
 
-    st.metric("Total Value", f"${total_value:,.2f}")
-    st.metric("PnL ($)", f"${total_pnl:,.2f}")
-    st.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Value", f"${total_value:,.2f}")
+    col2.metric("PnL ($)", f"${total_pnl:,.2f}")
+    col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
     # -------------------------
     # PIE CHART
@@ -201,4 +217,4 @@ if len(valid_assets) > 0:
     st.write(f"Volatility: {std_dev:.2%}")
 
 else:
-    st.warning("Portfolio boş veya geçerli veri yok.")
+    st.warning("Geçerli veri yok veya henüz hesaplanamadı.")
