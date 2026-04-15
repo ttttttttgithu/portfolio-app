@@ -16,7 +16,7 @@ bonds = ["TLT", "IEF"]
 
 tickers = stocks + crypto + bonds
 
-data = yf.download(tickers, start="2020-01-01", progress=False)
+data = yf.download(tickers, period="1y", progress=False)
 
 if data.empty:
     st.error("Market data alınamadı")
@@ -83,40 +83,26 @@ valid_assets = []
 
 for asset in portfolio:
     ticker = asset["ticker"]
-    date = asset["date"]
+    date = pd.to_datetime(asset["date"])
 
     try:
-        data = yf.download(
-            ticker,
-            start=date,
-            end=pd.to_datetime(date) + pd.Timedelta(days=5),
-            progress=False
-        )
+        hist = yf.Ticker(ticker).history(period="1y")
     except:
-        data = pd.DataFrame()
+        continue
 
-    # 🔥 fallback (kritik)
-    if data.empty or "Close" not in data:
-        data = yf.download(ticker, period="7d", progress=False)
-
-    if data.empty or "Close" not in data:
+    if hist.empty:
         st.warning(f"{ticker} veri alınamadı")
         continue
 
-    try:
-        buy_price = float(data["Close"].dropna().iloc[0])
-    except:
-        continue
+    hist = hist.reset_index()
+    hist["Date"] = pd.to_datetime(hist["Date"])
 
-    current_data = yf.download(ticker, period="1d", progress=False)
+    # en yakın tarihi bul
+    hist["diff"] = abs(hist["Date"] - date)
+    closest_row = hist.loc[hist["diff"].idxmin()]
 
-    if current_data.empty or "Close" not in current_data:
-        continue
-
-    try:
-        current_price = float(current_data["Close"].iloc[-1])
-    except:
-        continue
+    buy_price = float(closest_row["Close"])
+    current_price = float(hist["Close"].iloc[-1])
 
     if np.isnan(buy_price) or np.isnan(current_price):
         continue
@@ -138,8 +124,8 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = float(sum(a["value"] for a in valid_assets))
-    total_cost = float(sum(a["cost"] for a in valid_assets))
+    total_value = sum(a["value"] for a in valid_assets)
+    total_cost = sum(a["cost"] for a in valid_assets)
 
     total_pnl = total_value - total_cost
     total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
@@ -168,9 +154,8 @@ if len(valid_assets) > 0:
     # TIME SERIES
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in portfolio)
 
-    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
+    price_data = yf.download(tickers, period="1y", progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
@@ -185,7 +170,7 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
+    sp500 = yf.download("^GSPC", period="1y", progress=False)["Close"]
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
@@ -231,6 +216,6 @@ if len(valid_assets) > 0:
     st.write(f"Alpha: {alpha:.2%}")
 
 else:
-    st.error("⚠️ Geçerli veri yok. Lütfen şu formatta gir:")
-    st.write("AAPL / MSFT / BTC-USD / ETH-USD")
-    st.write("Tarih: weekday seç (örn: 2023-01-10)")
+    st.error("⚠️ Veri alınamadı. Şunları dene:")
+    st.write("- AAPL / MSFT / BTC-USD")
+    st.write("- Tarih: son 1 yıl içinde olsun")
