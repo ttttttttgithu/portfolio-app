@@ -57,9 +57,9 @@ with col1:
 with col2:
     date = st.date_input("Buy Date")
 
-    # gelecek tarih fix
+    # Gelecek tarih fix
     if date > pd.Timestamp.today().date():
-        st.warning("Gelecek tarih girdin → bugüne ayarlandı")
+        st.warning("Gelecek tarih girdin → bugüne çekildi")
         date = pd.Timestamp.today().date()
 
 with col3:
@@ -94,32 +94,43 @@ for asset in portfolio:
         )
 
         if hist.empty:
-            st.warning(f"{t} için veri yok")
             continue
 
         hist = hist.reset_index()
 
-        # en yakın işlem günü
+        # en yakın işlem günü bul
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
         buy_price = row["Close"]
 
+        # 🔥 SERIES FIX
         if isinstance(buy_price, pd.Series):
-            buy_price = buy_price.values[0]
+            buy_price = buy_price.iloc[0]
 
         if pd.isna(buy_price):
             continue
 
         buy_price = float(buy_price)
 
+        # current price
         current_data = yf.download(t, period="1d", progress=False)
+
+        if current_data.empty:
+            continue
+
         cp = current_data["Close"].dropna()
 
         if cp.empty:
             continue
 
-        current_price = float(cp.iloc[-1])
+        current_price = cp.iloc[-1]
+
+        # 🔥 SERIES FIX
+        if isinstance(current_price, pd.Series):
+            current_price = current_price.iloc[0]
+
+        current_price = float(current_price)
 
     except:
         continue
