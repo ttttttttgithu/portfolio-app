@@ -8,7 +8,7 @@ st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (İLK KISIM)
+# MARKET OVERVIEW (ELLEME)
 # -------------------------
 st.subheader("📈 Market Overview")
 
@@ -41,7 +41,6 @@ if not data.empty:
     )
 
     df_market = df_market.reset_index().rename(columns={"index": "Ticker"})
-
     st.dataframe(df_market)
 else:
     st.warning("Market data alınamadı")
@@ -80,7 +79,7 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# CALCULATIONS
+# CALCULATIONS (FIXED)
 # -------------------------
 valid_assets = []
 
@@ -89,14 +88,16 @@ for asset in portfolio:
     buy_date = asset["date"]
 
     try:
+        # BUY PRICE (geniş aralık → weekend fix)
         hist = yf.download(
             ticker,
-            start=buy_date - pd.Timedelta(days=5),
-            end=buy_date + pd.Timedelta(days=5),
+            start=buy_date - pd.Timedelta(days=10),
+            end=buy_date + pd.Timedelta(days=10),
             progress=False
         )
 
         if hist.empty:
+            st.write(f"{ticker} veri alınamadı")
             continue
 
         hist = hist.reset_index()
@@ -106,38 +107,44 @@ for asset in portfolio:
 
         buy_price = float(row["Close"])
 
-        current = yf.download(ticker, period="1d", progress=False)
+        # CURRENT PRICE
+        current = yf.download(ticker, period="5d", progress=False)
+
         if current.empty:
+            st.write(f"{ticker} current veri yok")
             continue
 
-        current_price = float(current["Close"].iloc[-1])
+        current_price = float(current["Close"].dropna().iloc[-1])
 
-        value = current_price * asset["quantity"]
-        cost = buy_price * asset["quantity"]
+        quantity = float(asset["quantity"])
+
+        value = current_price * quantity
+        cost = buy_price * quantity
 
         valid_assets.append({
             "ticker": ticker,
-            "quantity": asset["quantity"],
+            "quantity": quantity,
             "buy_price": buy_price,
             "current_price": current_price,
             "value": value,
             "cost": cost
         })
 
-    except:
+    except Exception as e:
+        st.write(f"{ticker} hata:", e)
         continue
 
 # -------------------------
 # OUTPUT
 # -------------------------
 if len(valid_assets) == 0:
-    st.warning("Geçerli veri yok. Ticker doğru mu?")
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
     st.stop()
 
 df = pd.DataFrame(valid_assets)
 
-total_value = df["value"].sum()
-total_cost = df["cost"].sum()
+total_value = float(df["value"].sum())
+total_cost = float(df["cost"].sum())
 
 total_pnl = total_value - total_cost
 total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
@@ -169,12 +176,12 @@ ax1.set_title("Portfolio Distribution")
 st.pyplot(fig1)
 
 # -------------------------
-# PERFORMANCE VS S&P500
+# PERFORMANCE
 # -------------------------
 tickers = df["ticker"].tolist()
 start_date = min(asset["date"] for asset in portfolio)
 
-prices = yf.download(tickers, start=start_date)["Close"]
+prices = yf.download(tickers, start=start_date, progress=False)["Close"]
 
 if isinstance(prices, pd.Series):
     prices = prices.to_frame()
@@ -187,7 +194,7 @@ for i, row in df.iterrows():
 
 portfolio_series["Total"] = portfolio_series.sum(axis=1)
 
-sp500 = yf.download("^GSPC", start=start_date)["Close"]
+sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
 portfolio_norm = portfolio_series["Total"] / portfolio_series["Total"].iloc[0] * 100
 sp500_norm = sp500 / sp500.iloc[0] * 100
@@ -201,12 +208,12 @@ ax2.set_title("Performance vs S&P 500")
 st.pyplot(fig2)
 
 # -------------------------
-# RISK METRICS
+# RISK
 # -------------------------
 returns = prices.pct_change().dropna()
-weights = df["weight"].values
-
 returns = returns[df["ticker"]]
+
+weights = df["weight"].values
 
 mean_returns = returns.mean()
 expected_return = np.dot(weights, mean_returns) * 252
