@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
+st.set_page_config(layout="wide")
+
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
@@ -18,13 +19,14 @@ tickers = stocks + crypto + bonds
 
 data = yf.download(tickers, start="2020-01-01", progress=False)
 
-if "Close" not in data:
-    st.error("Market data alınamadı")
+if data.empty:
+    st.error("Market data çekilemedi")
     st.stop()
 
 close_prices = data["Close"]
 
 latest_prices = close_prices.iloc[-1]
+
 returns_1d = close_prices.pct_change(1).iloc[-1] * 100
 returns_1w = close_prices.pct_change(5).iloc[-1] * 100
 returns_1m = close_prices.pct_change(21).iloc[-1] * 100
@@ -43,7 +45,7 @@ df["Asset Type"] = df.index.map(
 df = df.reset_index().rename(columns={"index": "Ticker"})
 
 st.subheader("📈 Market Overview")
-st.dataframe(df, use_container_width=True)
+st.dataframe(df)
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -71,21 +73,8 @@ if st.button("Add Asset"):
             "date": str(date),
             "quantity": quantity
         })
-        st.success("✅ Asset eklendi!")
-    else:
-        st.warning("Ticker boş olamaz ve quantity > 0 olmalı")
 
 portfolio = st.session_state.portfolio
-
-# -------------------------
-# SHOW PORTFOLIO
-# -------------------------
-st.subheader("📋 Current Portfolio")
-
-if len(portfolio) > 0:
-    st.dataframe(pd.DataFrame(portfolio), use_container_width=True)
-else:
-    st.info("Henüz asset eklenmedi.")
 
 # -------------------------
 # CALCULATIONS
@@ -96,30 +85,31 @@ for asset in portfolio:
     ticker = asset["ticker"]
     date = asset["date"]
 
+    # DEBUG
+    st.write(f"Checking: {ticker} - {date}")
+
     try:
         data = yf.download(
             ticker,
             start=date,
-            end=pd.to_datetime(date) + pd.Timedelta(days=5),
+            end=pd.to_datetime(date) + pd.Timedelta(days=7),
             progress=False
         )
     except:
         data = pd.DataFrame()
 
-    if data.empty or "Close" not in data:
+    if data.empty:
+        st.warning(f"Veri yok: {ticker}")
         continue
 
-    try:
-        buy_price = float(data["Close"].iloc[0])
-    except:
-        continue
+    buy_price = data["Close"].iloc[0]
 
     current_data = yf.download(ticker, period="1d", progress=False)
 
-    if current_data.empty or "Close" not in current_data:
+    if current_data.empty:
         continue
 
-    current_price = float(current_data["Close"].iloc[-1])
+    current_price = current_data["Close"].iloc[-1]
 
     current_value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
@@ -136,11 +126,11 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = float(sum(a["value"] for a in valid_assets))
-    total_cost = float(sum(a["cost"] for a in valid_assets))
+    total_value = sum(a["value"] for a in valid_assets)
+    total_cost = sum(a["cost"] for a in valid_assets)
 
     total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost != 0 else 0
 
     st.subheader("📊 Portfolio Summary")
 
@@ -150,14 +140,11 @@ if len(valid_assets) > 0:
     col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
     # -------------------------
-    # WEIGHTS
+    # PIE CHART
     # -------------------------
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
     labels = [a["ticker"] for a in valid_assets]
     sizes = [a["weight"] for a in valid_assets]
 
@@ -167,7 +154,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig1)
 
     # -------------------------
-    # PRICE DATA
+    # PERFORMANCE VS S&P500
     # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
@@ -185,9 +172,6 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    # -------------------------
-    # S&P500
-    # -------------------------
     sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
@@ -201,7 +185,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig2)
 
     # -------------------------
-    # RETURNS
+    # RISK METRICS (ALPHA BETA)
     # -------------------------
     returns = price_data.pct_change().dropna()
 
@@ -215,73 +199,33 @@ if len(valid_assets) > 0:
     variance = np.dot(weights, np.dot(cov_matrix, weights)) * 252
     std_dev = np.sqrt(variance)
 
-    st.subheader("📉 Risk Metrics")
-    st.write(f"Expected Return: {expected_return:.2%}")
-    st.write(f"Volatility: {std_dev:.2%}")
-
-    # -------------------------
-    # ALPHA BETA CAPM
-    # -------------------------
     sp500_returns = sp500.pct_change().dropna()
     portfolio_returns = portfolio_value["Total"].pct_change().dropna()
 
     portfolio_returns, sp500_returns = portfolio_returns.align(sp500_returns, join='inner')
 
-    if len(portfolio_returns) > 0:
-        cov_matrix = np.cov(portfolio_returns, sp500_returns)
+    cov = np.cov(portfolio_returns, sp500_returns)
 
-        beta = cov_matrix[0][1] / cov_matrix[1][1]
+    beta = cov[0][1] / cov[1][1]
 
-        risk_free_rate = 0.02
-        market_return = sp500_returns.mean() * 252
+    risk_free_rate = 0.02
+    market_return = sp500_returns.mean() * 252
 
-        alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
-        capm_return = risk_free_rate + beta * (market_return - risk_free_rate)
-
-        st.subheader("📊 Advanced Metrics")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Beta", f"{beta:.2f}")
-        col2.metric("Alpha", f"{alpha:.2%}")
-        col3.metric("CAPM Return", f"{capm_return:.2%}")
+    alpha = expected_return - (risk_free_rate + beta * (market_return - risk_free_rate))
 
     # -------------------------
-    # CUMULATIVE RETURNS
-    # -------------------------
-    returns_pct = portfolio_value["Total"].pct_change().fillna(0)
-    cumulative_returns = (1 + returns_pct).cumprod() * 100
-
-    fig3, ax3 = plt.subplots()
-    ax3.plot(cumulative_returns, label="Portfolio (%)")
-    ax3.set_title("Cumulative Return")
-    ax3.legend()
-    st.pyplot(fig3)
-
-    # -------------------------
-    # INFLATION ADJUSTED
+    # ENFLASYON
     # -------------------------
     inflation_rate = 0.03
-    daily_inflation = (1 + inflation_rate) ** (1/252) - 1
+    real_return = expected_return - inflation_rate
 
-    inflation_series = (1 + daily_inflation) ** np.arange(len(cumulative_returns))
-    real_returns = cumulative_returns / inflation_series
+    st.subheader("📉 Risk Metrics")
 
-    fig4, ax4 = plt.subplots()
-    ax4.plot(real_returns, label="Real Return")
-    ax4.legend()
-    ax4.set_title("Inflation Adjusted Return")
-    st.pyplot(fig4)
-
-    # -------------------------
-    # COMBINED
-    # -------------------------
-    fig5, ax5 = plt.subplots()
-    ax5.plot(cumulative_returns, label="Portfolio (Nominal)")
-    ax5.plot(real_returns, label="Portfolio (Real)")
-    ax5.plot(sp500_norm, label="S&P 500")
-    ax5.legend()
-    ax5.set_title("Portfolio vs Market vs Inflation")
-    st.pyplot(fig5)
+    st.write(f"Expected Return: {expected_return:.2%}")
+    st.write(f"Volatility: {std_dev:.2%}")
+    st.write(f"Beta: {beta:.2f}")
+    st.write(f"Alpha: {alpha:.2%}")
+    st.write(f"Real Return (Inflation Adj): {real_return:.2%}")
 
 else:
-    st.warning("Geçerli veri yok veya henüz hesaplanamadı.")
+    st.warning("⚠️ Geçerli veri yok. Ticker veya tarih hatalı olabilir.")
