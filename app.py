@@ -5,36 +5,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
 # MARKET DATA
 # -------------------------
-stocks = ["AAPL", "MSFT"]
-crypto = ["BTC-USD", "ETH-USD"]
-bonds = ["TLT", "IEF"]
-
-tickers = stocks + crypto + bonds
+tickers = ["AAPL", "MSFT", "BTC-USD", "ETH-USD"]
 
 data = yf.download(tickers, start="2020-01-01", progress=False)
 
 if not data.empty:
     close_prices = data["Close"]
 
-    df = pd.DataFrame({
-        "Price": close_prices.iloc[-1],
-        "1D %": close_prices.pct_change(1).iloc[-1] * 100,
-        "1W %": close_prices.pct_change(5).iloc[-1] * 100,
-        "1M %": close_prices.pct_change(21).iloc[-1] * 100,
-    })
-
-    df["Asset Type"] = df.index.map(
-        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-    )
-
     st.subheader("📈 Market Overview")
-    st.dataframe(df)
+    st.dataframe(close_prices.tail())
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -44,7 +28,7 @@ st.subheader("💼 Add Portfolio")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-ticker = st.text_input("Ticker (örn: AAPL, BTC-USD)").upper()
+ticker = st.text_input("Ticker (örn: AAPL)").upper()
 date = st.date_input("Buy Date")
 quantity = st.number_input("Quantity", min_value=0.0)
 
@@ -60,6 +44,27 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
+# SAFE PRICE FUNCTION 🔥
+# -------------------------
+def get_price(df):
+    try:
+        close = df["Close"]
+
+        # Eğer DataFrame gelirse (multi index)
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+
+        close = close.dropna()
+
+        if len(close) == 0:
+            return None
+
+        return float(close.iloc[0])
+
+    except:
+        return None
+
+# -------------------------
 # CALCULATIONS
 # -------------------------
 valid_assets = []
@@ -69,7 +74,7 @@ for asset in portfolio:
     date = asset["date"]
 
     try:
-        # 🔥 BUY PRICE (fallback sistem)
+        # BUY PRICE
         data = yf.download(
             ticker,
             start=date,
@@ -78,24 +83,20 @@ for asset in portfolio:
         )
 
         if data.empty:
-            # fallback → son 1 aydan ilk price al
             data = yf.download(ticker, period="1mo", progress=False)
 
-        if data.empty:
-            continue
+        buy_price = get_price(data)
 
-        buy_price = float(data["Close"].dropna().iloc[0])
-
-        # 🔥 CURRENT PRICE
+        # CURRENT PRICE
         current_data = yf.download(ticker, period="1d", progress=False)
 
         if current_data.empty:
             current_data = yf.download(ticker, period="5d", progress=False)
 
-        if current_data.empty:
-            continue
+        current_price = get_price(current_data)
 
-        current_price = float(current_data["Close"].dropna().iloc[-1])
+        if buy_price is None or current_price is None:
+            continue
 
         value = current_price * asset["quantity"]
         cost = buy_price * asset["quantity"]
@@ -117,8 +118,8 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    total_value = float(sum(a["value"] for a in valid_assets))
-    total_cost = float(sum(a["cost"] for a in valid_assets))
+    total_value = sum(a["value"] for a in valid_assets)
+    total_cost = sum(a["cost"] for a in valid_assets)
 
     total_pnl = total_value - total_cost
     total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0
@@ -130,9 +131,7 @@ if len(valid_assets) > 0:
     col2.metric("PnL ($)", f"${total_pnl:,.2f}")
     col3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
+    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -141,12 +140,9 @@ if len(valid_assets) > 0:
 
     fig1, ax1 = plt.subplots(figsize=(4,4))
     ax1.pie(sizes, labels=labels, autopct='%1.1f%%')
-    ax1.set_title("Portfolio Distribution")
     st.pyplot(fig1)
 
-    # -------------------------
     # PERFORMANCE
-    # -------------------------
     tickers = [a["ticker"] for a in valid_assets]
 
     price_data = yf.download(tickers, period="1y", progress=False)["Close"]
@@ -163,28 +159,21 @@ if len(valid_assets) > 0:
 
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
-    portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
+    norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
 
     fig2, ax2 = plt.subplots(figsize=(6,3))
-    ax2.plot(portfolio_norm, label="Portfolio")
-    ax2.legend()
+    ax2.plot(norm)
     ax2.set_title("Portfolio Performance")
     st.pyplot(fig2)
 
-    # -------------------------
     # RISK
-    # -------------------------
     returns = price_data.pct_change().dropna()
 
     returns = returns[[a["ticker"] for a in valid_assets]]
-
     weights = np.array([a["weight"] for a in valid_assets])
 
-    mean_returns = returns.mean()
-    expected_return = float(np.dot(weights, mean_returns) * 252)
-
-    cov_matrix = returns.cov()
-    variance = float(np.dot(weights, np.dot(cov_matrix, weights)) * 252)
+    expected_return = float(np.dot(weights, returns.mean()) * 252)
+    variance = float(np.dot(weights, np.dot(returns.cov(), weights)) * 252)
     std_dev = np.sqrt(variance)
 
     st.subheader("📉 Risk Metrics")
@@ -192,4 +181,4 @@ if len(valid_assets) > 0:
     st.write(f"Volatility: {std_dev:.2%}")
 
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et.")
