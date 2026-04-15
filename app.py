@@ -78,22 +78,28 @@ for asset in portfolio:
     try:
         hist = yf.download(
             ticker,
-            start=date - pd.Timedelta(days=5),
-            end=date + pd.Timedelta(days=5),
+            start=date - pd.Timedelta(days=7),
+            end=date + pd.Timedelta(days=7),
             progress=False
         )
 
         if hist.empty:
             continue
 
-        buy_price = float(hist["Close"].iloc[0])
+        hist = hist.reset_index()
 
-        current_data = yf.download(ticker, period="1d", progress=False)
+        # 🔥 en yakın işlem gününü bul
+        hist["diff"] = (hist["Date"] - date).abs()
+        closest_row = hist.loc[hist["diff"].idxmin()]
+
+        buy_price = float(closest_row["Close"])
+
+        current_data = yf.download(ticker, period="5d", progress=False)
 
         if current_data.empty:
             continue
 
-        current_price = float(current_data["Close"].iloc[-1])
+        current_price = float(current_data["Close"].dropna().iloc[-1])
 
         value = float(current_price * quantity)
         cost = float(buy_price * quantity)
@@ -112,7 +118,7 @@ for asset in portfolio:
 # RESULTS
 # -------------------------
 if len(valid_assets) == 0:
-    st.warning("Geçerli veri yok. Doğru ticker ve tarih gir.")
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
 else:
 
     total_value = float(sum(a["value"] for a in valid_assets))
