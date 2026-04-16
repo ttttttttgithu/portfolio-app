@@ -14,44 +14,37 @@ bonds = ["TLT","IEF","BND"]
 ALL_TICKERS = stocks + crypto + bonds
 
 # -------------------------
-# SAFE DOWNLOAD (NO MULTIINDEX BUG)
+# LOAD DATA (ULTRA SAFE)
 # -------------------------
 @st.cache_data
 def load_prices():
-    data = {}
+    frames = []
 
     for t in ALL_TICKERS:
         try:
-            df = yf.download(
-                t,
-                period="3mo",
-                interval="1d",
-                auto_adjust=True,
-                progress=False
-            )
+            df = yf.download(t, period="3mo", interval="1d", progress=False)
 
-            if not df.empty and "Close" in df:
-                s = df["Close"].dropna()
-                if len(s) > 5:
-                    data[t] = s
+            if df.empty or "Close" not in df:
+                continue
+
+            s = df["Close"].rename(t)
+            frames.append(s)
 
         except:
             continue
 
-    if not data:
+    if not frames:
         return pd.DataFrame()
 
-    prices = pd.concat(data, axis=1)
+    prices = pd.concat(frames, axis=1)
 
-    # flatten columns
-    prices.columns = prices.columns.get_level_values(0)
+    prices = prices.sort_index()
 
-    # 🔥 force same timeline
-    full_index = pd.date_range(prices.index.min(), prices.index.max(), freq="D")
-    prices = prices.reindex(full_index)
+    # normalize index (critical fix)
+    prices.index = pd.to_datetime(prices.index).normalize()
 
-    # 🔥 fill ALL gaps (critical)
-    prices = prices.ffill().bfill()
+    # forward fill ONLY (no bfill → avoids fake data)
+    prices = prices.ffill()
 
     return prices
 
@@ -64,26 +57,33 @@ if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    def calc_return(days):
-        if len(prices) > days:
-            return (prices.iloc[-1] / prices.iloc[-1 - days] - 1) * 100
-        else:
-            return pd.Series(index=prices.columns, data=np.nan)
+    def safe_ret(days):
+        out = []
+        for col in prices.columns:
+            s = prices[col].dropna()
+
+            if len(s) > days:
+                val = (s.iloc[-1] / s.iloc[-1 - days] - 1) * 100
+            else:
+                val = np.nan
+
+            out.append(val)
+
+        return pd.Series(out, index=prices.columns)
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
-        "Price": latest,
-        "1D %": calc_return(1),
-        "1W %": calc_return(5),
-        "1M %": calc_return(21)
-    }).reset_index(drop=True)
+        "Price": latest.values,
+        "1D %": safe_ret(1).values,
+        "1W %": safe_ret(5).values,
+        "1M %": safe_ret(21).values
+    })
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
     market_df = market_df.replace([np.inf, -np.inf], np.nan)
-    market_df = market_df.dropna(subset=["Price"])
 
     st.subheader("📈 Market Overview")
     st.dataframe(market_df, use_container_width=True)
@@ -103,8 +103,6 @@ with col1:
 
 with col2:
     date = st.date_input("Buy Date")
-    if date > pd.Timestamp.today().date():
-        date = pd.Timestamp.today().date()
 
 with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
@@ -116,29 +114,29 @@ if st.button("Add Asset"):
             "date": pd.to_datetime(date),
             "quantity": quantity
         })
-        st.success("Added")
 
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# PORTFOLIO CALCULATION
+# PORTFOLIO CALC
 # -------------------------
 valid_assets = []
 
 for asset in portfolio:
     t = asset["ticker"]
-    d = asset["date"]
+    d = pd.to_datetime(asset["date"]).normalize()
 
     if t not in prices.columns:
         continue
 
-    s = prices[t]
+    s = prices[t].dropna()
 
-    if s.isna().all():
+    if len(s) < 2:
         continue
 
+    # strictly pick closest VALID date
     try:
-        idx = s.index.get_indexer([d], method="nearest")[0]
+        idx = np.argmin(np.abs(s.index - d))
     except:
         continue
 
@@ -189,9 +187,9 @@ if len(valid_assets) > 0:
     portfolio_series = (port_df * quantities).sum(axis=1)
 
     sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
+    sp500.index = pd.to_datetime(sp500.index).normalize()
 
-    sp500 = sp500.reindex(portfolio_series.index)
-    sp500 = sp500.ffill().bfill()
+    sp500 = sp500.reindex(portfolio_series.index).ffill()
 
     portfolio_norm = portfolio_series / portfolio_series.iloc[0] * 100
     sp_norm = sp500 / sp500.iloc[0] * 100
