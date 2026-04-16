@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (75 ASSET)
+# MARKET OVERVIEW (75 ASSET - FIXED)
 # -------------------------
 
 stocks = [
@@ -31,13 +31,20 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-data = yf.download(tickers, period="1mo", progress=False)
+# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
+all_data = {}
 
-if not data.empty:
-    close_prices = data["Close"]
+with st.spinner("Market data yükleniyor..."):
+    for t in tickers:
+        try:
+            temp = yf.download(t, period="1mo", progress=False)["Close"]
+            if not temp.empty:
+                all_data[t] = temp
+        except:
+            continue
 
-    # 🔥 kritik fix
-    close_prices = close_prices.dropna(axis=1)
+if len(all_data) > 0:
+    close_prices = pd.DataFrame(all_data)
 
     latest_prices = close_prices.iloc[-1]
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
@@ -60,7 +67,7 @@ if not data.empty:
     st.dataframe(df)
 
 # -------------------------
-# PORTFOLIO INPUT (AYNI)
+# PORTFOLIO INPUT
 # -------------------------
 st.subheader("💼 Add Portfolio")
 
@@ -94,7 +101,7 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# CALCULATIONS (AYNI)
+# CALCULATIONS
 # -------------------------
 valid_assets = []
 
@@ -153,7 +160,7 @@ for asset in portfolio:
     valid_assets.append(asset)
 
 # -------------------------
-# RESULTS (AYNI)
+# RESULTS
 # -------------------------
 if len(valid_assets) > 0:
 
