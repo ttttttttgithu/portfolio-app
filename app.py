@@ -4,74 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# -------------------------
-# PAGE CONFIG
-# -------------------------
 st.set_page_config(layout="wide")
-
-# -------------------------
-# WORKING DARK THEME CSS
-# -------------------------
-st.markdown("""
-<style>
-
-/* Main background */
-.stApp {
-    background-color: #0E1117;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background-color: #111827;
-}
-
-/* Text */
-h1, h2, h3, h4, h5, h6, p, span, div {
-    color: #E5E7EB !important;
-}
-
-/* Input boxes */
-input, textarea {
-    background-color: #1F2937 !important;
-    color: white !important;
-}
-
-/* Number input */
-div[data-baseweb="input"] {
-    background-color: #1F2937 !important;
-}
-
-/* Buttons */
-button {
-    background-color: #2563EB !important;
-    color: white !important;
-    border-radius: 8px !important;
-}
-
-/* Dataframe */
-[data-testid="stDataFrame"] {
-    background-color: #111827;
-}
-
-/* Metric boxes */
-[data-testid="stMetric"] {
-    background-color: #1F2937;
-    padding: 15px;
-    border-radius: 10px;
-}
-
-/* Selectbox */
-div[data-baseweb="select"] {
-    background-color: #1F2937 !important;
-}
-
-/* Date input */
-div[data-baseweb="input"] > div {
-    background-color: #1F2937 !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
 
 st.title("📊 Portfolio Analyzer")
 
