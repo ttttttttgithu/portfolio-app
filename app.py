@@ -31,7 +31,7 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 STABLE DATA FETCH + DUPLICATE FIX
+# 🔥 DATA FETCH (FIXED)
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -46,15 +46,23 @@ with st.spinner("Market data yükleniyor..."):
 if len(all_data) > 0:
     close_prices = pd.concat(all_data, axis=1)
 
-    # 🔥 CRITICAL FIX (duplicate ticker sorunu çözülür)
+    # 🔥 duplicate fix
     close_prices.columns = close_prices.columns.get_level_values(0)
 
+    # 🔥 NA fix (stocks için kritik)
     close_prices = close_prices.dropna(how="all")
+    close_prices = close_prices.ffill()
 
     latest_prices = close_prices.iloc[-1]
+
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
     returns_1w = close_prices.pct_change(5).iloc[-1] * 100
     returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
+    # 🔥 NaN fix
+    returns_1d = returns_1d.fillna(0)
+    returns_1w = returns_1w.fillna(0)
+    returns_1m = returns_1m.fillna(0)
 
     df = pd.DataFrame({
         "Ticker": latest_prices.index,
