@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.express as px
 
 st.set_page_config(layout="wide")
 
@@ -50,9 +51,14 @@ if len(manual_assets) > 0:
     total_value_manual = df_manual["value"].sum()
     st.write(f"**Total Value: ${total_value_manual:,.2f}**")
 
-    fig, ax = plt.subplots()
-    ax.pie(df_manual["value"], labels=df_manual["name"], autopct="%1.1f%%")
-    st.pyplot(fig)
+    # ✅ PLOTLY PIE
+    fig = px.pie(
+        df_manual,
+        values="value",
+        names="name",
+        title="Portfolio Distribution"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------
 # MARKET OVERVIEW
@@ -197,8 +203,14 @@ if len(valid_assets) > 0:
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
-    fig1, ax1 = plt.subplots()
-    ax1.pie([a["weight"] for a in valid_assets],
-            labels=[a["ticker"] for a in valid_assets],
-            autopct='%1.1f%%')
-    st.pyplot(fig1)
+    # ✅ PLOTLY PIE
+    df_pie = pd.DataFrame(valid_assets)
+
+    fig1 = px.pie(
+        df_pie,
+        values="value",
+        names="ticker",
+        title="Portfolio Allocation"
+    )
+
+    st.plotly_chart(fig1, use_container_width=True)
