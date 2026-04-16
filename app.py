@@ -31,7 +31,7 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK SEFERDE DATA ÇEK (KRİTİK FIX)
+# 🔥 TEK SEFERDE DATA ÇEK
 data = yf.download(tickers, period="1mo", group_by="ticker", progress=False)
 
 if not data.empty:
@@ -47,8 +47,14 @@ if not data.empty:
         except:
             continue
 
-    # 🔥 boşlukları doldur (stocks için kritik)
+    # 🔥 boşluk doldur
     close_prices = close_prices.ffill()
+
+    # 💥 KRİTİK FIX → tamamen boş olanları kaldır
+    close_prices = close_prices.dropna(axis=1, how="all")
+
+    # 💥 ekstra filtre (çok az veri olanları kaldır)
+    close_prices = close_prices.loc[:, close_prices.notna().sum() > 5]
 
     latest_prices = close_prices.iloc[-1]
 
@@ -56,7 +62,6 @@ if not data.empty:
     returns_1w = close_prices.pct_change(5).iloc[-1] * 100
     returns_1m = close_prices.pct_change(21).iloc[-1] * 100
 
-    # 🔥 NaN temizle
     returns_1d = returns_1d.fillna(0)
     returns_1w = returns_1w.fillna(0)
     returns_1m = returns_1m.fillna(0)
