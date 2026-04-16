@@ -4,53 +4,57 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MANUAL PORTFOLIO BUILDER (FIXED)
+# MANUAL PORTFOLIO BUILDER (TOP - FINAL FIX)
 # -------------------------
 st.subheader("🛠️ Manual Portfolio Builder")
 
 if "manual_portfolio" not in st.session_state:
     st.session_state.manual_portfolio = []
 
-col1, col2, col3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 
-with col1:
-    asset_name = st.text_input("Asset Name", key="manual_name")
+with c1:
+    asset_name = st.text_input("Asset Name", key="mp_name")
 
-with col2:
-    buy_price_manual = st.number_input("Buy Price", min_value=0.0, key="manual_price")
+with c2:
+    buy_price_manual = st.number_input("Buy Price", min_value=0.0, key="mp_price")
 
-with col3:
-    quantity_manual = st.number_input("Quantity", min_value=0.0, key="manual_qty")
+with c3:
+    quantity_manual = st.number_input("Quantity", min_value=0.0, key="mp_qty")
 
-if st.button("Add Manual Asset"):
-    if asset_name and buy_price_manual > 0 and quantity_manual > 0:
+with c4:
+    add_manual = st.button("➕ Add", key="mp_add_btn")
+
+if add_manual:
+    if asset_name != "" and buy_price_manual > 0 and quantity_manual > 0:
         st.session_state.manual_portfolio.append({
             "name": asset_name.upper(),
             "price": buy_price_manual,
             "quantity": quantity_manual
         })
         st.success("Asset eklendi!")
-        st.rerun()
 
 manual_assets = st.session_state.manual_portfolio
 
 if len(manual_assets) > 0:
-    st.subheader("📋 Manual Portfolio")
+    st.markdown("### 📋 Manual Portfolio")
 
     df_manual = pd.DataFrame(manual_assets)
-    df_manual["value"] = df_manual["price"] * df_manual["quantity"]
+    df_manual["Value"] = df_manual["price"] * df_manual["quantity"]
 
-    st.dataframe(df_manual)
+    st.dataframe(df_manual, use_container_width=True)
 
-    total_value_manual = df_manual["value"].sum()
+    total_value_manual = df_manual["Value"].sum()
     st.write(f"**Total Value: ${total_value_manual:,.2f}**")
 
-    fig, ax = plt.subplots()
-    ax.pie(df_manual["value"], labels=df_manual["name"], autopct="%1.1f%%")
-    st.pyplot(fig)
+    fig_manual, ax_manual = plt.subplots()
+    ax_manual.pie(df_manual["Value"], labels=df_manual["name"], autopct="%1.1f%%")
+    ax_manual.set_title("Manual Portfolio Allocation")
+    st.pyplot(fig_manual)
 
 # -------------------------
 # MARKET OVERVIEW
@@ -108,32 +112,33 @@ if len(all_data) > 0:
     )
 
     st.subheader("📈 Market Overview")
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 
 # -------------------------
-# ORIGINAL PORTFOLIO (UNCHANGED)
+# ORIGINAL PORTFOLIO
 # -------------------------
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-col1, col2, col3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 
-with col1:
-    ticker = st.text_input("Ticker (örn: AAPL)", key="ticker_input")
-    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
+with c1:
+    ticker = st.text_input("Ticker", key="p_ticker").strip().upper()
 
-with col2:
-    date = st.date_input("Buy Date", key="date_input")
-
+with c2:
+    date = st.date_input("Buy Date", key="p_date")
     if date > pd.Timestamp.today().date():
         date = pd.Timestamp.today().date()
 
-with col3:
-    quantity = st.number_input("Quantity", min_value=0.0, key="qty_input")
+with c3:
+    quantity = st.number_input("Quantity", min_value=0.0, key="p_qty")
 
-if st.button("Add Asset"):
+with c4:
+    add_asset = st.button("➕ Add", key="p_add_btn")
+
+if add_asset:
     if ticker != "" and quantity > 0:
         st.session_state.portfolio.append({
             "ticker": ticker,
@@ -141,42 +146,43 @@ if st.button("Add Asset"):
             "quantity": quantity
         })
         st.success("Asset eklendi!")
-        st.rerun()
 
 portfolio = st.session_state.portfolio
 
+# -------------------------
+# CALCULATIONS
+# -------------------------
 valid_assets = []
 
 for asset in portfolio:
-    t = asset["ticker"]
-    d = asset["date"]
-
     try:
-        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+        t = asset["ticker"]
+        d = asset["date"]
 
+        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
         if hist.empty:
             continue
 
         hist = hist.reset_index()
         hist["diff"] = (hist["Date"] - d).abs()
-        row = hist.loc[hist["diff"].idxmin()]
+        buy_price = float(hist.loc[hist["diff"].idxmin()]["Close"])
 
-        buy_price = float(row["Close"])
+        current_price = float(yf.download(t, period="1d", progress=False)["Close"].dropna().iloc[-1])
 
-        current_data = yf.download(t, period="1d", progress=False)
-        current_price = float(current_data["Close"].dropna().iloc[-1])
+        value = current_price * asset["quantity"]
+        cost = buy_price * asset["quantity"]
+
+        asset["value"] = value
+        asset["cost"] = cost
+
+        valid_assets.append(asset)
 
     except:
         continue
 
-    value = current_price * asset["quantity"]
-    cost = buy_price * asset["quantity"]
-
-    asset["value"] = value
-    asset["cost"] = cost
-
-    valid_assets.append(asset)
-
+# -------------------------
+# RESULTS
+# -------------------------
 if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
@@ -195,8 +201,11 @@ if len(valid_assets) > 0:
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
-    fig1, ax1 = plt.subplots()
-    ax1.pie([a["weight"] for a in valid_assets],
-            labels=[a["ticker"] for a in valid_assets],
-            autopct='%1.1f%%')
-    st.pyplot(fig1)
+    fig, ax = plt.subplots()
+    ax.pie([a["weight"] for a in valid_assets],
+           labels=[a["ticker"] for a in valid_assets],
+           autopct="%1.1f%%")
+    st.pyplot(fig)
+
+else:
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
