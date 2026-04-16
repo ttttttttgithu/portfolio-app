@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (STABLE 75)
+# MARKET OVERVIEW (FIXED)
 # -------------------------
 
 stocks = [
@@ -31,7 +31,7 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK ÇEKME (EN STABİL YÖNTEM)
+# 🔥 FIXED DATA FETCH
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -44,7 +44,8 @@ with st.spinner("Market data yükleniyor..."):
             continue
 
 if len(all_data) > 0:
-    close_prices = pd.DataFrame(all_data)
+    close_prices = pd.concat(all_data, axis=1)
+    close_prices = close_prices.dropna(how="all")
 
     latest_prices = close_prices.iloc[-1]
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
