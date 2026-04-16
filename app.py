@@ -4,146 +4,199 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
-# =====================================================
-# 🟢 1. MANUAL PORTFOLIO (STABLE)
-# =====================================================
+# -------------------------
+# MANUAL PORTFOLIO BUILDER (FIXED)
+# -------------------------
 st.subheader("🛠️ Manual Portfolio Builder")
 
-if "manual_assets" not in st.session_state:
-    st.session_state.manual_assets = []
+if "manual_portfolio" not in st.session_state:
+    st.session_state.manual_portfolio = []
 
-with st.form("manual_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
+col1, col2, col3 = st.columns(3)
 
-    name = col1.text_input("Asset Name")
-    price = col2.number_input("Buy Price", min_value=0.0)
-    qty = col3.number_input("Quantity", min_value=0.0)
+with col1:
+    asset_name = st.text_input("Asset Name", key="manual_name")
 
-    add = st.form_submit_button("Add Asset")
+with col2:
+    buy_price_manual = st.number_input("Buy Price", min_value=0.0, key="manual_price")
 
-    if add:
-        if name and price > 0 and qty > 0:
-            st.session_state.manual_assets.append({
-                "Asset": name.upper(),
-                "Price": price,
-                "Quantity": qty
-            })
+with col3:
+    quantity_manual = st.number_input("Quantity", min_value=0.0, key="manual_qty")
 
-# DISPLAY MANUAL
-if len(st.session_state.manual_assets) > 0:
-    df_manual = pd.DataFrame(st.session_state.manual_assets)
-    df_manual["Value"] = df_manual["Price"] * df_manual["Quantity"]
+if st.button("Add Manual Asset"):
+    if asset_name and buy_price_manual > 0 and quantity_manual > 0:
+        st.session_state.manual_portfolio.append({
+            "name": asset_name.upper(),
+            "price": buy_price_manual,
+            "quantity": quantity_manual
+        })
+        st.success("Asset eklendi!")
+        st.rerun()
 
-    st.markdown("### 📋 Manual Portfolio")
-    st.dataframe(df_manual, use_container_width=True)
+manual_assets = st.session_state.manual_portfolio
 
-    total_val = df_manual["Value"].sum()
-    st.metric("Total Value", f"${total_val:,.2f}")
+if len(manual_assets) > 0:
+    st.subheader("📋 Manual Portfolio")
+
+    df_manual = pd.DataFrame(manual_assets)
+    df_manual["value"] = df_manual["price"] * df_manual["quantity"]
+
+    st.dataframe(df_manual)
+
+    total_value_manual = df_manual["value"].sum()
+    st.write(f"**Total Value: ${total_value_manual:,.2f}**")
 
     fig, ax = plt.subplots()
-    ax.pie(df_manual["Value"], labels=df_manual["Asset"], autopct="%1.1f%%")
-    ax.set_title("Allocation")
+    ax.pie(df_manual["value"], labels=df_manual["name"], autopct="%1.1f%%")
     st.pyplot(fig)
 
-# =====================================================
-# 🟢 2. MARKET OVERVIEW (FAST & STABLE)
-# =====================================================
-st.subheader("📈 Market Overview")
+# -------------------------
+# MARKET OVERVIEW
+# -------------------------
+stocks = [
+"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
+"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
+"XOM","CVX","ABBV","MRK","PFE"
+]
 
-tickers = ["AAPL","MSFT","GOOGL","AMZN","TSLA","BTC-USD","ETH-USD","TLT","GLD"]
+crypto = [
+"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
+"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
+"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
+"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
+]
 
-data = {}
+bonds = [
+"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
+"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
+"USIG","TFLO","VTIP","BIV","TLH","EDV"
+]
 
-for t in tickers:
-    try:
-        df = yf.download(t, period="1mo", progress=False)["Close"]
-        if not df.empty:
-            data[t] = df
-    except:
-        pass
+tickers = stocks + crypto + bonds
 
-if data:
-    prices = pd.DataFrame(data)
-    latest = prices.iloc[-1]
-    change = prices.pct_change().iloc[-1] * 100
+all_data = {}
 
-    overview = pd.DataFrame({
-        "Price": latest,
-        "1D %": change
+with st.spinner("Market data yükleniyor..."):
+    for t in tickers:
+        try:
+            temp = yf.download(t, period="1mo", progress=False)["Close"]
+            if not temp.empty:
+                all_data[t] = temp
+        except:
+            continue
+
+if len(all_data) > 0:
+    close_prices = pd.DataFrame(all_data)
+
+    latest_prices = close_prices.iloc[-1]
+    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
+    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
+    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
+    df = pd.DataFrame({
+        "Ticker": latest_prices.index,
+        "Price": latest_prices.values,
+        "1D %": returns_1d.values,
+        "1W %": returns_1w.values,
+        "1M %": returns_1m.values
     })
 
-    st.dataframe(overview, use_container_width=True)
+    df["Asset Type"] = df["Ticker"].apply(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
 
-# =====================================================
-# 🟢 3. REAL PORTFOLIO (ORIGINAL LOGIC SIMPLIFIED)
-# =====================================================
-st.subheader("💼 Portfolio (Live Data)")
+    st.subheader("📈 Market Overview")
+    st.dataframe(df)
+
+# -------------------------
+# ORIGINAL PORTFOLIO (UNCHANGED)
+# -------------------------
+st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-with st.form("portfolio_form", clear_on_submit=True):
-    c1, c2, c3 = st.columns(3)
+col1, col2, col3 = st.columns(3)
 
-    ticker = c1.text_input("Ticker").upper()
-    date = c2.date_input("Buy Date")
-    qty = c3.number_input("Quantity", min_value=0.0)
+with col1:
+    ticker = st.text_input("Ticker (örn: AAPL)", key="ticker_input")
+    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
 
-    add = st.form_submit_button("Add")
+with col2:
+    date = st.date_input("Buy Date", key="date_input")
 
-    if add:
-        if ticker and qty > 0:
-            st.session_state.portfolio.append({
-                "ticker": ticker,
-                "date": pd.to_datetime(date),
-                "qty": qty
-            })
+    if date > pd.Timestamp.today().date():
+        date = pd.Timestamp.today().date()
 
-# CALCULATE
-results = []
+with col3:
+    quantity = st.number_input("Quantity", min_value=0.0, key="qty_input")
 
-for a in st.session_state.portfolio:
+if st.button("Add Asset"):
+    if ticker != "" and quantity > 0:
+        st.session_state.portfolio.append({
+            "ticker": ticker,
+            "date": pd.to_datetime(date),
+            "quantity": quantity
+        })
+        st.success("Asset eklendi!")
+        st.rerun()
+
+portfolio = st.session_state.portfolio
+
+valid_assets = []
+
+for asset in portfolio:
+    t = asset["ticker"]
+    d = asset["date"]
+
     try:
-        hist = yf.download(a["ticker"], period="1y", progress=False)["Close"]
+        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
 
         if hist.empty:
             continue
 
-        buy_price = hist.loc[hist.index >= a["date"]].iloc[0]
-        current_price = hist.iloc[-1]
+        hist = hist.reset_index()
+        hist["diff"] = (hist["Date"] - d).abs()
+        row = hist.loc[hist["diff"].idxmin()]
 
-        value = current_price * a["qty"]
-        cost = buy_price * a["qty"]
+        buy_price = float(row["Close"])
 
-        results.append({
-            "Ticker": a["ticker"],
-            "Value": value,
-            "Cost": cost
-        })
+        current_data = yf.download(t, period="1d", progress=False)
+        current_price = float(current_data["Close"].dropna().iloc[-1])
 
     except:
         continue
 
-# DISPLAY
-if results:
-    df = pd.DataFrame(results)
+    value = current_price * asset["quantity"]
+    cost = buy_price * asset["quantity"]
 
-    total_value = df["Value"].sum()
-    total_cost = df["Cost"].sum()
+    asset["value"] = value
+    asset["cost"] = cost
 
-    pnl = total_value - total_cost
+    valid_assets.append(asset)
 
-    st.metric("Total Value", f"${total_value:,.2f}")
-    st.metric("PnL", f"${pnl:,.2f}")
+if len(valid_assets) > 0:
 
-    weights = df["Value"] / total_value
+    total_value = sum(a["value"] for a in valid_assets)
+    total_cost = sum(a["cost"] for a in valid_assets)
 
-    fig, ax = plt.subplots()
-    ax.pie(weights, labels=df["Ticker"], autopct="%1.1f%%")
-    st.pyplot(fig)
+    total_pnl = total_value - total_cost
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
 
-else:
-    st.info("Henüz portfolio eklenmedi.")
+    st.subheader("📊 Portfolio Summary")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Value", f"${total_value:,.2f}")
+    c2.metric("PnL ($)", f"${total_pnl:,.2f}")
+    c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+
+    for a in valid_assets:
+        a["weight"] = a["value"] / total_value
+
+    fig1, ax1 = plt.subplots()
+    ax1.pie([a["weight"] for a in valid_assets],
+            labels=[a["ticker"] for a in valid_assets],
+            autopct='%1.1f%%')
+    st.pyplot(fig1)
