@@ -1,138 +1,81 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import requests
-import yfinance as yf
 import matplotlib.pyplot as plt
 
-st.title("📊 Portfolio Analyzer (Debug Version)")
+st.title("📊 Portfolio Analyzer (Offline Test)")
 
 # -------------------------
-# DATA FETCH (MULTI SOURCE)
+# FAKE DATA (GARANTİLİ)
 # -------------------------
-@st.cache_data(ttl=600)
-def get_data(ticker):
-    log = ""
+np.random.seed(42)
 
-    # 1️⃣ yfinance
-    try:
-        df = yf.download(ticker, period="3mo", progress=False)
-        if not df.empty and "Close" in df:
-            log += "yfinance OK"
-            return df[["Close"]], log
-        else:
-            log += "yfinance EMPTY -> "
-    except Exception as e:
-        log += f"yfinance ERROR: {e} -> "
+dates = pd.date_range(end=pd.Timestamp.today(), periods=60)
 
-    # 2️⃣ stooq fallback (çok sağlamdır)
-    try:
-        url = f"https://stooq.com/q/d/l/?s={ticker.lower()}&i=d"
-        df = pd.read_csv(url)
+data = {
+    "AAPL": 150 + np.cumsum(np.random.randn(60)),
+    "MSFT": 300 + np.cumsum(np.random.randn(60)),
+    "TSLA": 200 + np.cumsum(np.random.randn(60)),
+}
 
-        if not df.empty:
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date")
-            df.set_index("Date", inplace=True)
-            df.rename(columns={"Close": "Close"}, inplace=True)
-
-            log += "stooq OK"
-            return df[["Close"]], log
-        else:
-            log += "stooq EMPTY"
-    except Exception as e:
-        log += f"stooq ERROR: {e}"
-
-    return pd.DataFrame(), log
-
-
-# -------------------------
-# ASSETS
-# -------------------------
-tickers = ["AAPL","MSFT","TSLA","NVDA","BTC-USD"]
+df = pd.DataFrame(data, index=dates)
 
 # -------------------------
 # MARKET OVERVIEW
 # -------------------------
 rows = []
-debug_logs = []
 
-for t in tickers:
-    df, log = get_data(t)
-    debug_logs.append(f"{t} → {log}")
+for col in df.columns:
+    close = df[col]
 
-    if df.empty or len(df) < 22:
-        continue
-
-    close = df["Close"]
-
-    try:
-        price = close.iloc[-1]
-        r1d = (close.iloc[-1]/close.iloc[-2]-1)*100
-        r1w = (close.iloc[-1]/close.iloc[-6]-1)*100
-        r1m = (close.iloc[-1]/close.iloc[-22]-1)*100
-    except:
-        continue
+    price = close.iloc[-1]
+    r1d = (close.iloc[-1]/close.iloc[-2]-1)*100
+    r1w = (close.iloc[-1]/close.iloc[-6]-1)*100
+    r1m = (close.iloc[-1]/close.iloc[-22]-1)*100
 
     rows.append({
-        "Ticker": t,
+        "Ticker": col,
         "Price": price,
         "1D %": r1d,
         "1W %": r1w,
         "1M %": r1m
     })
 
-df = pd.DataFrame(rows)
+overview = pd.DataFrame(rows)
 
 st.subheader("📈 Market Overview")
-st.dataframe(df)
-
-# -------------------------
-# DEBUG PANEL
-# -------------------------
-st.subheader("🛠 Debug Info")
-for log in debug_logs:
-    st.text(log)
+st.dataframe(overview)
 
 # -------------------------
 # PORTFOLIO
 # -------------------------
 st.subheader("💼 Portfolio")
 
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = []
+portfolio = {
+    "AAPL": 10,
+    "MSFT": 5,
+    "TSLA": 2
+}
 
-ticker = st.text_input("Ticker").upper()
-qty = st.number_input("Quantity", min_value=0.0)
+values = []
 
-if st.button("Add"):
-    if ticker and qty > 0:
-        st.session_state.portfolio.append({"ticker": ticker, "qty": qty})
+for t, qty in portfolio.items():
+    price = df[t].iloc[-1]
+    values.append(price * qty)
 
-valid = []
+total = sum(values)
 
-for a in st.session_state.portfolio:
-    df, _ = get_data(a["ticker"])
+st.write(f"Total Value: ${total:,.2f}")
 
-    if df.empty:
-        continue
+# PIE
+fig, ax = plt.subplots()
+ax.pie(values, labels=portfolio.keys(), autopct="%1.1f%%")
+st.pyplot(fig)
 
-    price = df["Close"].iloc[-1]
-    value = price * a["qty"]
+# PERFORMANCE
+norm = df / df.iloc[0] * 100
 
-    a["value"] = value
-    valid.append(a)
-
-if valid:
-    total = sum(a["value"] for a in valid)
-
-    st.subheader("📊 Total Value")
-    st.write(f"${total:,.2f}")
-
-    weights = [a["value"]/total for a in valid]
-
-    fig, ax = plt.subplots()
-    ax.pie(weights, labels=[a["ticker"] for a in valid], autopct="%1.1f%%")
-    st.pyplot(fig)
-else:
-    st.warning("Portfolio data yok")
+fig2, ax2 = plt.subplots()
+ax2.plot(norm)
+ax2.legend(df.columns)
+st.pyplot(fig2)
