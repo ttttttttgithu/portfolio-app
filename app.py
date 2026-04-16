@@ -7,23 +7,27 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (100 ASSET)
+# MARKET OVERVIEW (75 ASSET)
 # -------------------------
+
 stocks = [
 "AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
 "V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
-"XOM","CVX","ABBV","MRK","PFE","BAC","WMT","CSCO","INTC","T",
-"ORCL","CRM","ACN","COST","AVGO","MCD","DHR","NEE","TXN","LIN",
-"NKE","AMD","QCOM","HON","LOW","UPS","PM","INTU","IBM","CAT",
-"GS","MS","BLK","SCHW","SPGI","AMAT","ISRG","NOW","PLD","MDT",
-"GE","BA","MMM","F","GM","PYPL","SQ","UBER","LYFT","SNAP",
-"SHOP","ZM","DOCU","ROKU","TTD","CRWD","NET","OKTA","DDOG","SNOW",
-"PANW","ZS","TEAM","ASML","TSM","BABA","JD","PDD","SE","MELI",
-"RIO","BHP","VALE","GOLD","SLV","GLD","QQQ","SPY","DIA","ARKK"
+"XOM","CVX","ABBV","MRK","PFE"
 ]
 
-crypto = ["BTC-USD", "ETH-USD"]
-bonds = ["TLT", "IEF"]
+crypto = [
+"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
+"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
+"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
+"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
+]
+
+bonds = [
+"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
+"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
+"USIG","TFLO","VTIP","BIV","TLH","EDV"
+]
 
 tickers = stocks + crypto + bonds
 
@@ -56,7 +60,7 @@ if not data.empty:
     st.dataframe(df)
 
 # -------------------------
-# PORTFOLIO INPUT
+# PORTFOLIO INPUT (AYNI)
 # -------------------------
 st.subheader("💼 Add Portfolio")
 
@@ -90,7 +94,7 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# CALCULATIONS
+# CALCULATIONS (AYNI)
 # -------------------------
 valid_assets = []
 
@@ -149,7 +153,7 @@ for asset in portfolio:
     valid_assets.append(asset)
 
 # -------------------------
-# RESULTS
+# RESULTS (AYNI)
 # -------------------------
 if len(valid_assets) > 0:
 
@@ -166,7 +170,6 @@ if len(valid_assets) > 0:
     c2.metric("PnL ($)", f"${total_pnl:,.2f}")
     c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -176,7 +179,6 @@ if len(valid_assets) > 0:
             autopct='%1.1f%%')
     st.pyplot(fig1)
 
-    # PERFORMANCE
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
@@ -204,9 +206,6 @@ if len(valid_assets) > 0:
     ax2.legend()
     st.pyplot(fig2)
 
-    # -------------------------
-    # RISK METRICS
-    # -------------------------
     portfolio_returns = portfolio_value["Total"].pct_change()
     sp500_returns = sp500.pct_change()
 
