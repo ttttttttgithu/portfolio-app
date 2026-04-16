@@ -6,16 +6,22 @@ import matplotlib.pyplot as plt
 
 st.title("📊 Portfolio Analyzer")
 
-# --------- # MANUAL PORTFOLIO BUILDER (FIXED) # ---------
+# -------------------------
+# MANUAL PORTFOLIO BUILDER (FIXED)
+# -------------------------
 st.subheader("🛠️ Manual Portfolio Builder")
+
 if "manual_portfolio" not in st.session_state:
     st.session_state.manual_portfolio = []
 
 col1, col2, col3 = st.columns(3)
+
 with col1:
     asset_name = st.text_input("Asset Name", key="manual_name")
+
 with col2:
     buy_price_manual = st.number_input("Buy Price", min_value=0.0, key="manual_price")
+
 with col3:
     quantity_manual = st.number_input("Quantity", min_value=0.0, key="manual_qty")
 
@@ -30,42 +36,48 @@ if st.button("Add Manual Asset"):
         st.rerun()
 
 manual_assets = st.session_state.manual_portfolio
+
 if len(manual_assets) > 0:
     st.subheader("📋 Manual Portfolio")
+
     df_manual = pd.DataFrame(manual_assets)
     df_manual["value"] = df_manual["price"] * df_manual["quantity"]
+
     st.dataframe(df_manual)
+
     total_value_manual = df_manual["value"].sum()
     st.write(f"**Total Value: ${total_value_manual:,.2f}**")
 
-    # Pie Chart with Percentages
-    fig, ax = plt.subplots(figsize=(10, 6))
-    wedges, texts, autotexts = ax.pie(df_manual["value"], labels=df_manual["name"], autopct="%1.1f%%", startangle=90)
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontweight('bold')
-        autotext.set_fontsize(10)
-    plt.title("Portfolio Allocation (%)", fontsize=14, fontweight='bold')
+    fig, ax = plt.subplots()
+    ax.pie(df_manual["value"], labels=df_manual["name"], autopct="%1.1f%%")
     st.pyplot(fig)
 
-    # Delete Asset Option
-    if len(manual_assets) > 0:
-        st.subheader("🗑️ Remove Asset")
-        col_remove1, col_remove2 = st.columns([3, 1])
-        with col_remove1:
-            asset_to_remove = st.selectbox("Select asset to remove:", [a["name"] for a in manual_assets], key="remove_asset")
-        with col_remove2:
-            if st.button("Remove"):
-                st.session_state.manual_portfolio = [a for a in manual_assets if a["name"] != asset_to_remove]
-                st.success("Asset silindi!")
-                st.rerun()
+# -------------------------
+# MARKET OVERVIEW
+# -------------------------
+stocks = [
+"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
+"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
+"XOM","CVX","ABBV","MRK","PFE"
+]
 
-# --------- # MARKET OVERVIEW # ---------
-stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ", "V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP", "XOM","CVX","ABBV","MRK","PFE"]
-crypto = ["BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD", "DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD", "LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD", "APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"]
-bonds = ["TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT", "VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT", "USIG","TFLO","VTIP","BIV","TLH","EDV"]
+crypto = [
+"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
+"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
+"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
+"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
+]
+
+bonds = [
+"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
+"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
+"USIG","TFLO","VTIP","BIV","TLH","EDV"
+]
+
 tickers = stocks + crypto + bonds
+
 all_data = {}
+
 with st.spinner("Market data yükleniyor..."):
     for t in tickers:
         try:
@@ -77,10 +89,12 @@ with st.spinner("Market data yükleniyor..."):
 
 if len(all_data) > 0:
     close_prices = pd.DataFrame(all_data)
+
     latest_prices = close_prices.iloc[-1]
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
     returns_1w = close_prices.pct_change(5).iloc[-1] * 100
     returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
     df = pd.DataFrame({
         "Ticker": latest_prices.index,
         "Price": latest_prices.values,
@@ -88,24 +102,34 @@ if len(all_data) > 0:
         "1W %": returns_1w.values,
         "1M %": returns_1m.values
     })
+
     df["Asset Type"] = df["Ticker"].apply(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
+
     st.subheader("📈 Market Overview")
     st.dataframe(df)
 
-# --------- # ORIGINAL PORTFOLIO (UNCHANGED) # ---------
+# -------------------------
+# ORIGINAL PORTFOLIO (UNCHANGED)
+# -------------------------
 st.subheader("💼 Add Portfolio")
+
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
+
 col1, col2, col3 = st.columns(3)
+
 with col1:
     ticker = st.text_input("Ticker (örn: AAPL)", key="ticker_input")
-    ticker = ticker.replace('"', '').replace("'", '').strip().upper()
+    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
+
 with col2:
     date = st.date_input("Buy Date", key="date_input")
+
     if date > pd.Timestamp.today().date():
         date = pd.Timestamp.today().date()
+
 with col3:
     quantity = st.number_input("Quantity", min_value=0.0, key="qty_input")
 
@@ -120,34 +144,49 @@ if st.button("Add Asset"):
         st.rerun()
 
 portfolio = st.session_state.portfolio
+
 valid_assets = []
+
 for asset in portfolio:
     t = asset["ticker"]
     d = asset["date"]
+
     try:
         hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+
         if hist.empty:
             continue
+
         hist = hist.reset_index()
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
+
         buy_price = float(row["Close"])
+
         current_data = yf.download(t, period="1d", progress=False)
         current_price = float(current_data["Close"].dropna().iloc[-1])
+
     except:
         continue
+
     value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
+
     asset["value"] = value
     asset["cost"] = cost
+
     valid_assets.append(asset)
+
 if len(valid_assets) > 0:
+
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
+
     total_pnl = total_value - total_cost
     total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Value", f"${total_value:,.2f}")
     c2.metric("PnL ($)", f"${total_pnl:,.2f}")
@@ -155,6 +194,9 @@ if len(valid_assets) > 0:
 
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
+
     fig1, ax1 = plt.subplots()
-    ax1.pie([a["weight"] for a in valid_assets], labels=[a["ticker"] for a in valid_assets], autopct='%1.1f%%')
+    ax1.pie([a["weight"] for a in valid_assets],
+            labels=[a["ticker"] for a in valid_assets],
+            autopct='%1.1f%%')
     st.pyplot(fig1)
