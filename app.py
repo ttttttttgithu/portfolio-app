@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (FIXED)
+# ASSETS
 # -------------------------
 
 stocks = [
@@ -31,8 +31,12 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 HER TICKER'I AYRI ÇEK (EN STABİL)
+# -------------------------
+# MARKET OVERVIEW (FINAL FIX)
+# -------------------------
+
 close_prices = pd.DataFrame()
+base_index = None
 
 for t in tickers:
     try:
@@ -42,16 +46,24 @@ for t in tickers:
             continue
 
         close = df_t["Close"].rename(t)
-        close_prices = pd.concat([close_prices, close], axis=1)
+
+        # ilk gelen index
+        if base_index is None:
+            base_index = close.index
+
+        # tümünü aynı indexe zorla
+        close = close.reindex(base_index)
+
+        close_prices[t] = close
 
     except:
         continue
 
-# boşluk doldur
-close_prices = close_prices.ffill()
+# boşlukları doldur
+close_prices = close_prices.ffill().bfill()
 
-# çok az verili tickerları at
-close_prices = close_prices.dropna(axis=1, thresh=10)
+# zayıf kolonları kaldır
+close_prices = close_prices.dropna(axis=1, thresh=20)
 
 if not close_prices.empty:
 
@@ -79,6 +91,7 @@ if not close_prices.empty:
 # -------------------------
 # PORTFOLIO INPUT
 # -------------------------
+
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -92,7 +105,6 @@ with col1:
 
 with col2:
     date = st.date_input("Buy Date")
-
     if date > pd.Timestamp.today().date():
         date = pd.Timestamp.today().date()
 
@@ -113,6 +125,7 @@ portfolio = st.session_state.portfolio
 # -------------------------
 # CALCULATIONS
 # -------------------------
+
 valid_assets = []
 
 for asset in portfolio:
@@ -120,7 +133,8 @@ for asset in portfolio:
     d = asset["date"]
 
     try:
-        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+        hist = yf.download(t, start=d - pd.Timedelta(days=10),
+                           end=d + pd.Timedelta(days=10), progress=False)
 
         if hist.empty:
             continue
@@ -148,6 +162,7 @@ for asset in portfolio:
 # -------------------------
 # RESULTS
 # -------------------------
+
 if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
@@ -163,7 +178,7 @@ if len(valid_assets) > 0:
     c2.metric("PnL ($)", f"${total_pnl:,.2f}")
     c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # PIE
+    # PIE CHART
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -173,19 +188,33 @@ if len(valid_assets) > 0:
             autopct='%1.1f%%')
     st.pyplot(fig1)
 
-    # PERFORMANCE
+    # PERFORMANCE (AYNI INDEX FIX)
     tickers_port = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
     price_data = pd.DataFrame()
+    base_index = None
 
     for t in tickers_port:
         try:
             df_t = yf.download(t, start=start_date, progress=False)
-            if not df_t.empty:
-                price_data[t] = df_t["Close"]
+
+            if df_t.empty:
+                continue
+
+            close = df_t["Close"].rename(t)
+
+            if base_index is None:
+                base_index = close.index
+
+            close = close.reindex(base_index)
+
+            price_data[t] = close
+
         except:
             continue
+
+    price_data = price_data.ffill().bfill()
 
     portfolio_value = pd.DataFrame(index=price_data.index)
 
@@ -196,6 +225,7 @@ if len(valid_assets) > 0:
     portfolio_value["Total"] = portfolio_value.sum(axis=1)
 
     sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
+    sp500 = sp500.reindex(portfolio_value.index).ffill().bfill()
 
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
