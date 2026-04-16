@@ -8,35 +8,35 @@ st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MANUAL PORTFOLIO BUILDER (TOP - FINAL FIX)
+# ✅ MANUAL PORTFOLIO (FORM VERSION - GUARANTEED WORK)
 # -------------------------
 st.subheader("🛠️ Manual Portfolio Builder")
 
 if "manual_portfolio" not in st.session_state:
     st.session_state.manual_portfolio = []
 
-c1, c2, c3, c4 = st.columns(4)
+with st.form("manual_form"):
+    c1, c2, c3 = st.columns(3)
 
-with c1:
-    asset_name = st.text_input("Asset Name", key="mp_name")
+    with c1:
+        asset_name = st.text_input("Asset Name")
 
-with c2:
-    buy_price_manual = st.number_input("Buy Price", min_value=0.0, key="mp_price")
+    with c2:
+        buy_price = st.number_input("Buy Price", min_value=0.0)
 
-with c3:
-    quantity_manual = st.number_input("Quantity", min_value=0.0, key="mp_qty")
+    with c3:
+        quantity = st.number_input("Quantity", min_value=0.0)
 
-with c4:
-    add_manual = st.button("➕ Add", key="mp_add_btn")
+    submitted = st.form_submit_button("➕ Add Asset")
 
-if add_manual:
-    if asset_name != "" and buy_price_manual > 0 and quantity_manual > 0:
-        st.session_state.manual_portfolio.append({
-            "name": asset_name.upper(),
-            "price": buy_price_manual,
-            "quantity": quantity_manual
-        })
-        st.success("Asset eklendi!")
+    if submitted:
+        if asset_name and buy_price > 0 and quantity > 0:
+            st.session_state.manual_portfolio.append({
+                "name": asset_name.upper(),
+                "price": buy_price,
+                "quantity": quantity
+            })
+            st.success("Asset eklendi!")
 
 manual_assets = st.session_state.manual_portfolio
 
@@ -48,13 +48,13 @@ if len(manual_assets) > 0:
 
     st.dataframe(df_manual, use_container_width=True)
 
-    total_value_manual = df_manual["Value"].sum()
-    st.write(f"**Total Value: ${total_value_manual:,.2f}**")
+    total_value = df_manual["Value"].sum()
+    st.write(f"**Total Value: ${total_value:,.2f}**")
 
-    fig_manual, ax_manual = plt.subplots()
-    ax_manual.pie(df_manual["Value"], labels=df_manual["name"], autopct="%1.1f%%")
-    ax_manual.set_title("Manual Portfolio Allocation")
-    st.pyplot(fig_manual)
+    fig, ax = plt.subplots()
+    ax.pie(df_manual["Value"], labels=df_manual["name"], autopct="%1.1f%%")
+    ax.set_title("Portfolio Allocation")
+    st.pyplot(fig)
 
 # -------------------------
 # MARKET OVERVIEW
@@ -122,36 +122,31 @@ st.subheader("💼 Add Portfolio")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 
 with c1:
-    ticker = st.text_input("Ticker", key="p_ticker").strip().upper()
+    ticker = st.text_input("Ticker").strip().upper()
 
 with c2:
-    date = st.date_input("Buy Date", key="p_date")
+    date = st.date_input("Buy Date")
+
     if date > pd.Timestamp.today().date():
         date = pd.Timestamp.today().date()
 
 with c3:
-    quantity = st.number_input("Quantity", min_value=0.0, key="p_qty")
+    qty = st.number_input("Quantity", min_value=0.0)
 
-with c4:
-    add_asset = st.button("➕ Add", key="p_add_btn")
-
-if add_asset:
-    if ticker != "" and quantity > 0:
+if st.button("Add Asset"):
+    if ticker and qty > 0:
         st.session_state.portfolio.append({
             "ticker": ticker,
             "date": pd.to_datetime(date),
-            "quantity": quantity
+            "quantity": qty
         })
         st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
 
-# -------------------------
-# CALCULATIONS
-# -------------------------
 valid_assets = []
 
 for asset in portfolio:
@@ -180,32 +175,26 @@ for asset in portfolio:
     except:
         continue
 
-# -------------------------
-# RESULTS
-# -------------------------
 if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
 
-    total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
+    pnl = total_value - total_cost
+    pnl_pct = (pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Value", f"${total_value:,.2f}")
-    c2.metric("PnL ($)", f"${total_pnl:,.2f}")
-    c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+    c2.metric("PnL ($)", f"${pnl:,.2f}")
+    c3.metric("PnL (%)", f"{pnl_pct:.2f}%")
 
-    for a in valid_assets:
-        a["weight"] = a["value"] / total_value
+    weights = [a["value"]/total_value for a in valid_assets]
 
     fig, ax = plt.subplots()
-    ax.pie([a["weight"] for a in valid_assets],
-           labels=[a["ticker"] for a in valid_assets],
-           autopct="%1.1f%%")
+    ax.pie(weights, labels=[a["ticker"] for a in valid_assets], autopct="%1.1f%%")
     st.pyplot(fig)
 
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et")
