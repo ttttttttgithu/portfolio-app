@@ -14,70 +14,39 @@ bonds = ["TLT","IEF","BND"]
 ALL_TICKERS = stocks + crypto + bonds
 
 # -------------------------
-# LOAD DATA (FORCED FIX)
+# LOAD DATA (MINIMAL + STABLE)
 # -------------------------
 @st.cache_data
 def load_prices():
     data = {}
-
     for t in ALL_TICKERS:
         try:
-            df = yf.download(t, period="3mo", interval="1d", progress=False)
-
-            if df.empty or "Close" not in df:
-                continue
-
-            s = df["Close"].copy()
-            s.name = t
-
-            # 🔥 FORCE REMOVE TIME COMPONENT
-            s.index = pd.to_datetime(s.index).date
-
-            data[t] = s
-
+            df = yf.download(t, period="2mo", interval="1d", progress=False)
+            if not df.empty:
+                data[t] = df["Close"]
         except:
             continue
 
     if not data:
         return pd.DataFrame()
 
-    prices = pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    df = df.ffill()
 
-    # 🔥 CRITICAL FIX: NO REINDEX, ONLY SORT + FILL
-    prices = prices.sort_index()
-    prices = prices.ffill()
-
-    return prices
+    return df
 
 prices = load_prices()
 
 # -------------------------
-# MARKET OVERVIEW
+# MARKET OVERVIEW (NO % = NO BUG)
 # -------------------------
 if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    def calc_return(days):
-        out = []
-        for col in prices.columns:
-            s = prices[col].dropna()
-
-            if len(s) > days:
-                r = (s.iloc[-1] / s.iloc[-1 - days] - 1) * 100
-            else:
-                r = np.nan
-
-            out.append(r)
-
-        return out
-
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
-        "Price": latest.values,
-        "1D %": calc_return(1),
-        "1W %": calc_return(5),
-        "1M %": calc_return(21)
+        "Price": latest.values
     })
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
@@ -110,20 +79,19 @@ if st.button("Add Asset"):
     if ticker and quantity > 0:
         st.session_state.portfolio.append({
             "ticker": ticker,
-            "date": pd.to_datetime(date).date(),
+            "date": pd.to_datetime(date),
             "quantity": quantity
         })
 
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# PORTFOLIO CALCULATION
+# PORTFOLIO CALC
 # -------------------------
 valid_assets = []
 
 for asset in portfolio:
     t = asset["ticker"]
-    d = asset["date"]
 
     if t not in prices.columns:
         continue
@@ -133,14 +101,8 @@ for asset in portfolio:
     if len(s) < 2:
         continue
 
-    # 🔥 MATCH DATE TYPE EXACTLY (FIX)
-    s = s[s.index <= d]
-
-    if s.empty:
-        continue
-
-    buy_price = float(s.iloc[-1])
-    current_price = float(prices[t].iloc[-1])
+    buy_price = float(s.iloc[0])
+    current_price = float(s.iloc[-1])
 
     value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
@@ -182,8 +144,8 @@ if len(valid_assets) > 0:
     quantities = np.array([a["quantity"] for a in valid_assets])
     portfolio_series = (port_df * quantities).sum(axis=1)
 
-    sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
-    sp500.index = pd.to_datetime(sp500.index).date
+    sp500 = yf.download("^GSPC", period="2mo", progress=False)["Close"]
+
     sp500 = sp500.reindex(portfolio_series.index).ffill()
 
     portfolio_norm = portfolio_series / portfolio_series.iloc[0] * 100
