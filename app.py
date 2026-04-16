@@ -2,37 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 
 # -------------------------
-# PAGE CONFIG
+# CONFIG
 # -------------------------
 st.set_page_config(layout="wide", page_title="Portfolio Terminal")
-
-# -------------------------
-# FORCE EXTRA STYLE (DESTEK)
-# -------------------------
-st.markdown("""
-<style>
-.stApp {
-    background-color: #000000;
-    color: #00FF9F;
-    font-family: monospace;
-}
-section[data-testid="stSidebar"] {
-    background-color: #0a0a0a;
-}
-.panel {
-    background-color: #0a0a0a;
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid #00FF9F;
-    margin-bottom: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
 
 st.title("📊 Portfolio Analyzer")
 
@@ -68,7 +44,7 @@ bonds = [
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# DATA
+# MARKET DATA
 # -------------------------
 all_data = {}
 
@@ -82,13 +58,14 @@ with st.spinner("Market data yükleniyor..."):
             continue
 
 # -------------------------
-# MARKET + HEATMAP
+# LAYOUT
 # -------------------------
 col1, col2 = st.columns([2,1])
 
+# -------------------------
+# MARKET
+# -------------------------
 with col1:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-
     if len(all_data) > 0:
         close_prices = pd.DataFrame(all_data)
 
@@ -114,11 +91,10 @@ with col1:
         st.subheader("📈 Market Overview")
         st.dataframe(df, use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
+# -------------------------
+# HEATMAP
+# -------------------------
 with col2:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-
     if len(all_data) > 0 and not df.empty:
         fig = px.treemap(
             df,
@@ -127,17 +103,13 @@ with col2:
             color="1D %",
             color_continuous_scale="RdYlGn"
         )
-        fig.update_layout(template="plotly_dark", margin=dict(t=20,l=0,r=0,b=0))
+        fig.update_layout(template="plotly_dark")
         st.subheader("🔥 Heatmap")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 # -------------------------
-# PORTFOLIO INPUT
+# PORTFOLIO
 # -------------------------
-st.markdown('<div class="panel">', unsafe_allow_html=True)
-
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -163,7 +135,6 @@ if st.button("Add Asset"):
         })
 
 portfolio = st.session_state.portfolio
-st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # CALCULATIONS
@@ -202,8 +173,6 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
     pnl = total_value - total_cost
@@ -219,11 +188,7 @@ if len(valid_assets) > 0:
     fig.update_layout(template="plotly_dark")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
     # PERFORMANCE
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
@@ -243,8 +208,6 @@ if len(valid_assets) > 0:
 
     st.subheader("📈 Performance")
     st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.warning("Geçerli veri yok")
