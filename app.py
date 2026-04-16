@@ -3,13 +3,54 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+
+# -------------------------
+# PAGE CONFIG + BLOOMBERG STYLE
+# -------------------------
+st.set_page_config(layout="wide")
+
+st.markdown("""
+<style>
+.stApp {
+    background-color: #0a0a0a;
+    color: #00ff9f;
+    font-family: monospace;
+}
+section[data-testid="stSidebar"] {
+    background-color: #111;
+}
+.panel {
+    background-color: #111;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #222;
+    margin-bottom: 15px;
+}
+h1, h2, h3 {
+    color: #00ff9f;
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (75 ASSET - FIXED)
+# SIDEBAR (SEARCH + FILTER)
 # -------------------------
+st.sidebar.title("🔎 Terminal Controls")
 
+search = st.sidebar.text_input("Search Ticker")
+
+asset_filter = st.sidebar.selectbox(
+    "Asset Type",
+    ["All", "Stock", "Crypto", "Bond"]
+)
+
+# -------------------------
+# ASSETS
+# -------------------------
 stocks = [
 "AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
 "V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
@@ -31,7 +72,9 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
+# -------------------------
+# MARKET DATA
+# -------------------------
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -43,32 +86,73 @@ with st.spinner("Market data yükleniyor..."):
         except:
             continue
 
-if len(all_data) > 0:
-    close_prices = pd.DataFrame(all_data)
+# -------------------------
+# LAYOUT
+# -------------------------
+col1, col2 = st.columns([2,1])
 
-    latest_prices = close_prices.iloc[-1]
-    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+# -------------------------
+# MARKET PANEL
+# -------------------------
+with col1:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
 
-    df = pd.DataFrame({
-        "Ticker": latest_prices.index,
-        "Price": latest_prices.values,
-        "1D %": returns_1d.values,
-        "1W %": returns_1w.values,
-        "1M %": returns_1m.values
-    })
+    if len(all_data) > 0:
+        close_prices = pd.DataFrame(all_data)
 
-    df["Asset Type"] = df["Ticker"].apply(
-        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-    )
+        latest_prices = close_prices.iloc[-1]
+        returns_1d = close_prices.pct_change(1).iloc[-1] * 100
 
-    st.subheader("📈 Market Overview")
-    st.dataframe(df)
+        df = pd.DataFrame({
+            "Ticker": latest_prices.index,
+            "Price": latest_prices.values,
+            "1D %": returns_1d.values
+        })
+
+        df["Asset Type"] = df["Ticker"].apply(
+            lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+        )
+
+        # FILTERS
+        if asset_filter != "All":
+            df = df[df["Asset Type"] == asset_filter]
+
+        if search:
+            df = df[df["Ticker"].str.contains(search.upper())]
+
+        st.subheader("📈 Market Overview")
+        st.dataframe(df, use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# -------------------------
+# HEATMAP PANEL
+# -------------------------
+with col2:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+    if len(all_data) > 0:
+        heat_df = df.copy()
+
+        fig = px.treemap(
+            heat_df,
+            path=["Asset Type", "Ticker"],
+            values="Price",
+            color="1D %",
+            color_continuous_scale="RdYlGn"
+        )
+
+        fig.update_layout(template="plotly_dark", margin=dict(t=20,l=0,r=0,b=0))
+        st.subheader("🔥 Market Heatmap")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # PORTFOLIO INPUT
 # -------------------------
+st.markdown('<div class="panel">', unsafe_allow_html=True)
+
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -77,28 +161,24 @@ if "portfolio" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker (örn: AAPL)")
-    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
+    ticker = st.text_input("Ticker")
 
 with col2:
     date = st.date_input("Buy Date")
-
-    if date > pd.Timestamp.today().date():
-        date = pd.Timestamp.today().date()
 
 with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
-    if ticker != "" and quantity > 0:
+    if ticker and quantity > 0:
         st.session_state.portfolio.append({
-            "ticker": ticker,
+            "ticker": ticker.upper(),
             "date": pd.to_datetime(date),
             "quantity": quantity
         })
-        st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
+st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # CALCULATIONS
@@ -119,32 +199,8 @@ for asset in portfolio:
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
-        buy_price = row["Close"]
-
-        if isinstance(buy_price, pd.Series):
-            buy_price = buy_price.iloc[0]
-
-        if pd.isna(buy_price):
-            continue
-
-        buy_price = float(buy_price)
-
-        current_data = yf.download(t, period="1d", progress=False)
-
-        if current_data.empty:
-            continue
-
-        cp = current_data["Close"].dropna()
-
-        if cp.empty:
-            continue
-
-        current_price = cp.iloc[-1]
-
-        if isinstance(current_price, pd.Series):
-            current_price = current_price.iloc[0]
-
-        current_price = float(current_price)
+        buy_price = float(row["Close"])
+        current_price = float(yf.download(t, period="1d", progress=False)["Close"].iloc[-1])
 
     except:
         continue
@@ -154,8 +210,6 @@ for asset in portfolio:
 
     asset["value"] = value
     asset["cost"] = cost
-    asset["buy_price"] = buy_price
-    asset["current_price"] = current_price
 
     valid_assets.append(asset)
 
@@ -164,27 +218,29 @@ for asset in portfolio:
 # -------------------------
 if len(valid_assets) > 0:
 
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
 
-    total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
+    pnl = total_value - total_cost
 
     st.subheader("📊 Portfolio Summary")
-    c1, c2, c3 = st.columns(3)
+    st.write(f"Total Value: ${total_value:,.2f}")
+    st.write(f"PnL: ${pnl:,.2f}")
 
-    c1.metric("Total Value", f"${total_value:,.2f}")
-    c2.metric("PnL ($)", f"${total_pnl:,.2f}")
-    c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+    values = [a["value"] for a in valid_assets]
+    labels = [a["ticker"] for a in valid_assets]
 
-    for a in valid_assets:
-        a["weight"] = a["value"] / total_value
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
+    fig.update_layout(template="plotly_dark")
 
-    fig1, ax1 = plt.subplots(figsize=(4,4))
-    ax1.pie([a["weight"] for a in valid_assets],
-            labels=[a["ticker"] for a in valid_assets],
-            autopct='%1.1f%%')
-    st.pyplot(fig1)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # PERFORMANCE
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
 
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
@@ -194,56 +250,19 @@ if len(valid_assets) > 0:
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
 
-    portfolio_value = pd.DataFrame(index=price_data.index)
+    norm = price_data / price_data.iloc[0] * 100
 
-    for a in valid_assets:
-        if a["ticker"] in price_data.columns:
-            portfolio_value[a["ticker"]] = price_data[a["ticker"]] * a["quantity"]
+    fig = go.Figure()
 
-    portfolio_value["Total"] = portfolio_value.sum(axis=1)
+    for col in norm.columns:
+        fig.add_trace(go.Scatter(x=norm.index, y=norm[col], name=col))
 
-    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
+    fig.update_layout(template="plotly_dark")
 
-    portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
-    sp500_norm = sp500 / sp500.iloc[0] * 100
+    st.subheader("📈 Performance")
+    st.plotly_chart(fig, use_container_width=True)
 
-    fig2, ax2 = plt.subplots(figsize=(6,3))
-    ax2.plot(portfolio_norm, label="Portfolio")
-    ax2.plot(sp500_norm, label="S&P 500")
-    ax2.legend()
-    st.pyplot(fig2)
-
-    portfolio_returns = portfolio_value["Total"].pct_change()
-    sp500_returns = sp500.pct_change()
-
-    df_returns = pd.concat([portfolio_returns, sp500_returns], axis=1).dropna()
-    df_returns.columns = ["portfolio", "market"]
-
-    if len(df_returns) > 2:
-
-        cov = df_returns["portfolio"].cov(df_returns["market"])
-        var = df_returns["market"].var()
-
-        beta = cov / var if var != 0 else 0
-
-        expected_return = df_returns["portfolio"].mean() * 252
-        volatility = df_returns["portfolio"].std() * np.sqrt(252)
-
-        risk_free_rate = 0.02
-        market_return = df_returns["market"].mean() * 252
-
-        capm = risk_free_rate + beta * (market_return - risk_free_rate)
-        alpha = expected_return - capm
-
-        st.subheader("📉 Risk Metrics")
-        st.write(f"Expected Return: {expected_return:.2%}")
-        st.write(f"Volatility: {volatility:.2%}")
-        st.write(f"Beta: {beta:.2f}")
-        st.write(f"Alpha: {alpha:.2%}")
-        st.write(f"CAPM: {capm:.2%}")
-
-    else:
-        st.warning("Risk metrics hesaplamak için yeterli veri yok")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok")
