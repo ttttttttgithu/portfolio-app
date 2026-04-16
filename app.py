@@ -8,206 +8,184 @@ import plotly.express as px
 # -------------------------
 # CONFIG
 # -------------------------
-st.set_page_config(layout="wide", page_title="Portfolio Terminal")
+st.set_page_config(layout="wide")
+
+# 🔥 HARD OVERRIDE (KESİN ÇALIŞIR)
+st.markdown("""
+<style>
+/* EVERYTHING */
+* {
+    background-color: #000000 !important;
+    color: #00FF9F !important;
+    font-family: monospace !important;
+}
+
+/* APP */
+.stApp {
+    background-color: #000000 !important;
+}
+
+/* SIDEBAR */
+section[data-testid="stSidebar"] {
+    background-color: #050505 !important;
+}
+
+/* INPUT */
+input, textarea {
+    background-color: #111 !important;
+    color: #00FF9F !important;
+    border: 1px solid #00FF9F !important;
+}
+
+/* BUTTON */
+button {
+    background-color: #111 !important;
+    color: #00FF9F !important;
+    border: 1px solid #00FF9F !important;
+}
+
+/* DATAFRAME */
+[data-testid="stDataFrame"] {
+    background-color: #000 !important;
+}
+
+/* PANELS */
+.panel {
+    border: 1px solid #00FF9F;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
 # SIDEBAR
 # -------------------------
-st.sidebar.title("🔎 Terminal Controls")
-search = st.sidebar.text_input("Search Ticker")
-asset_filter = st.sidebar.selectbox("Asset Type", ["All", "Stock", "Crypto", "Bond"])
+st.sidebar.title("TERMINAL")
+search = st.sidebar.text_input("Search")
+asset_filter = st.sidebar.selectbox("Type", ["All","Stock","Crypto","Bond"])
 
 # -------------------------
 # ASSETS
 # -------------------------
-stocks = [
-"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
-"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
-"XOM","CVX","ABBV","MRK","PFE"
-]
-
-crypto = [
-"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
-"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
-"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
-"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
-]
-
-bonds = [
-"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
-"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
-"USIG","TFLO","VTIP","BIV","TLH","EDV"
-]
+stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA"]
+crypto = ["BTC-USD","ETH-USD","SOL-USD"]
+bonds = ["TLT","IEF","BND"]
 
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# MARKET DATA
+# DATA
 # -------------------------
-all_data = {}
+data = {}
+for t in tickers:
+    try:
+        d = yf.download(t, period="1mo", progress=False)["Close"]
+        if not d.empty:
+            data[t] = d
+    except:
+        pass
 
-with st.spinner("Market data yükleniyor..."):
-    for t in tickers:
-        try:
-            temp = yf.download(t, period="1mo", progress=False)["Close"]
-            if not temp.empty:
-                all_data[t] = temp
-        except:
-            continue
-
-# -------------------------
-# LAYOUT
-# -------------------------
-col1, col2 = st.columns([2,1])
+prices = pd.DataFrame(data)
 
 # -------------------------
-# MARKET
+# MARKET + HEATMAP
 # -------------------------
-with col1:
-    if len(all_data) > 0:
-        close_prices = pd.DataFrame(all_data)
+c1, c2 = st.columns([2,1])
 
-        latest_prices = close_prices.iloc[-1]
-        returns_1d = close_prices.pct_change(1).iloc[-1] * 100
+with c1:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
 
-        df = pd.DataFrame({
-            "Ticker": latest_prices.index,
-            "Price": latest_prices.values,
-            "1D %": returns_1d.values
-        })
+    latest = prices.iloc[-1]
+    ret = prices.pct_change().iloc[-1]*100
 
-        df["Asset Type"] = df["Ticker"].apply(
-            lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-        )
+    df = pd.DataFrame({
+        "Ticker": latest.index,
+        "Price": latest.values,
+        "%": ret.values
+    })
 
-        if asset_filter != "All":
-            df = df[df["Asset Type"] == asset_filter]
+    df["Type"] = df["Ticker"].apply(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
 
-        if search:
-            df = df[df["Ticker"].str.contains(search.upper())]
+    if asset_filter!="All":
+        df = df[df["Type"]==asset_filter]
 
-        st.subheader("📈 Market Overview")
-        st.dataframe(df, use_container_width=True)
+    if search:
+        df = df[df["Ticker"].str.contains(search.upper())]
 
-# -------------------------
-# HEATMAP
-# -------------------------
-with col2:
-    if len(all_data) > 0 and not df.empty:
-        fig = px.treemap(
-            df,
-            path=["Asset Type", "Ticker"],
-            values="Price",
-            color="1D %",
-            color_continuous_scale="RdYlGn"
-        )
-        fig.update_layout(template="plotly_dark")
-        st.subheader("🔥 Heatmap")
-        st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Market")
+    st.dataframe(df, use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with c2:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+    fig = px.treemap(
+        df,
+        path=["Type","Ticker"],
+        values="Price",
+        color="%",
+        color_continuous_scale="RdYlGn"
+    )
+    fig.update_layout(template="plotly_dark")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # PORTFOLIO
 # -------------------------
-st.subheader("💼 Add Portfolio")
+st.subheader("Portfolio")
 
-if "portfolio" not in st.session_state:
-    st.session_state.portfolio = []
+if "p" not in st.session_state:
+    st.session_state.p = []
 
-c1, c2, c3 = st.columns(3)
+t = st.text_input("Ticker").upper()
+q = st.number_input("Qty", min_value=0.0)
 
-with c1:
-    ticker = st.text_input("Ticker").upper().strip()
-
-with c2:
-    date = st.date_input("Buy Date")
-
-with c3:
-    quantity = st.number_input("Quantity", min_value=0.0)
-
-if st.button("Add Asset"):
-    if ticker and quantity > 0:
-        st.session_state.portfolio.append({
-            "ticker": ticker,
-            "date": pd.to_datetime(date),
-            "quantity": quantity
-        })
-
-portfolio = st.session_state.portfolio
+if st.button("Add"):
+    if t and q>0:
+        st.session_state.p.append((t,q))
 
 # -------------------------
-# CALCULATIONS
+# CALC
 # -------------------------
-valid_assets = []
+if st.session_state.p:
 
-for asset in portfolio:
-    t = asset["ticker"]
-    d = asset["date"]
+    vals = []
+    labs = []
 
-    try:
-        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
-        if hist.empty:
-            continue
+    for t,q in st.session_state.p:
+        try:
+            p = yf.download(t, period="1d", progress=False)["Close"].iloc[-1]
+            vals.append(p*q)
+            labs.append(t)
+        except:
+            pass
 
-        hist = hist.reset_index()
-        hist["diff"] = (hist["Date"] - d).abs()
-        row = hist.loc[hist["diff"].idxmin()]
+    total = sum(vals)
 
-        buy_price = float(row["Close"])
-        current_price = float(yf.download(t, period="1d", progress=False)["Close"].iloc[-1])
+    st.write(f"Total: ${total:,.2f}")
 
-    except:
-        continue
-
-    value = current_price * asset["quantity"]
-    cost = buy_price * asset["quantity"]
-
-    asset["value"] = value
-    asset["cost"] = cost
-
-    valid_assets.append(asset)
-
-# -------------------------
-# RESULTS
-# -------------------------
-if len(valid_assets) > 0:
-
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
-    pnl = total_value - total_cost
-
-    st.subheader("📊 Portfolio Summary")
-    st.write(f"Total Value: ${total_value:,.2f}")
-    st.write(f"PnL: ${pnl:,.2f}")
-
-    values = [a["value"] for a in valid_assets]
-    labels = [a["ticker"] for a in valid_assets]
-
-    fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
+    fig = go.Figure(data=[go.Pie(labels=labs, values=vals)])
     fig.update_layout(template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
-    # PERFORMANCE
-    tickers = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in valid_assets)
+    dfp = yf.download(labs, period="1mo", progress=False)["Close"]
 
-    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
+    if isinstance(dfp, pd.Series):
+        dfp = dfp.to_frame()
 
-    if isinstance(price_data, pd.Series):
-        price_data = price_data.to_frame()
-
-    norm = price_data / price_data.iloc[0] * 100
+    norm = dfp/dfp.iloc[0]*100
 
     fig = go.Figure()
-
     for col in norm.columns:
-        fig.add_trace(go.Scatter(x=norm.index, y=norm[col], name=col))
+        fig.add_trace(go.Scatter(x=norm.index,y=norm[col],name=col))
 
     fig.update_layout(template="plotly_dark")
-
-    st.subheader("📈 Performance")
-    st.plotly_chart(fig, use_container_width=True)
-
-else:
-    st.warning("Geçerli veri yok")
+    st.plotly_chart(fig)
