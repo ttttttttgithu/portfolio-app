@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (FIXED)
+# MARKET OVERVIEW
 # -------------------------
 
 stocks = [
@@ -31,7 +31,7 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 FIXED DATA FETCH
+# 🔥 STABLE DATA FETCH + DUPLICATE FIX
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -45,6 +45,10 @@ with st.spinner("Market data yükleniyor..."):
 
 if len(all_data) > 0:
     close_prices = pd.concat(all_data, axis=1)
+
+    # 🔥 CRITICAL FIX (duplicate ticker sorunu çözülür)
+    close_prices.columns = close_prices.columns.get_level_values(0)
+
     close_prices = close_prices.dropna(how="all")
 
     latest_prices = close_prices.iloc[-1]
