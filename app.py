@@ -4,76 +4,71 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+st.set_page_config(layout="wide")
 st.title("📊 Portfolio Analyzer")
-
-# -------------------------
-# TICKERS
-# -------------------------
 
 stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ"]
 crypto = ["BTC-USD","ETH-USD","SOL-USD"]
 bonds = ["TLT","IEF","BND"]
 
-ALL_TICKERS = list(set(stocks + crypto + bonds))
-
-# -------------------------
-# SINGLE DATA PIPELINE (MAIN FIX)
-# -------------------------
+ALL_TICKERS = stocks + crypto + bonds
 
 @st.cache_data
-def load_data():
-    data = yf.download(ALL_TICKERS, period="3mo", group_by="ticker", auto_adjust=True)
+def load_prices(tickers):
+    raw = yf.download(
+        tickers,
+        period="3mo",
+        interval="1d",
+        auto_adjust=True,
+        group_by="ticker",
+        progress=False,
+        threads=True
+    )
 
-    price_dict = {}
+    frames = []
 
-    for t in ALL_TICKERS:
-        try:
-            if t in data:
-                df = data[t]["Close"].dropna()
-                if not df.empty:
-                    price_dict[t] = df
-        except:
-            continue
+    if isinstance(raw.columns, pd.MultiIndex):
+        for t in tickers:
+            if (t, "Close") in raw.columns:
+                s = raw[(t, "Close")].rename(t)
+                frames.append(s)
+    else:
+        s = raw["Close"]
+        s.name = tickers[0]
+        frames.append(s)
 
-    prices = pd.DataFrame(price_dict)
+    df = pd.concat(frames, axis=1)
 
-    # 🔥 CRITICAL FIX
-    prices = prices.ffill().bfill()
+    full_index = pd.date_range(df.index.min(), df.index.max(), freq="D")
+    df = df.reindex(full_index).ffill().bfill()
 
-    return prices
+    return df
 
-prices = load_data()
-
-# -------------------------
-# MARKET OVERVIEW
-# -------------------------
+prices = load_prices(ALL_TICKERS)
 
 if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    returns_1d = prices.pct_change(1).iloc[-1] * 100
-    returns_1w = prices.pct_change(5).iloc[-1] * 100
-    returns_1m = prices.pct_change(21).iloc[-1] * 100
+    def ret(p):
+        return prices.pct_change(p).iloc[-1] * 100
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
         "Price": latest,
-        "1D %": returns_1d,
-        "1W %": returns_1w,
-        "1M %": returns_1m
+        "1D %": ret(1),
+        "1W %": ret(7),
+        "1M %": ret(30)
     }).reset_index(drop=True)
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
-    st.subheader("📈 Market Overview")
-    st.dataframe(market_df)
+    market_df = market_df.replace([np.inf, -np.inf], np.nan).dropna(subset=["Price"])
 
-# -------------------------
-# PORTFOLIO INPUT
-# -------------------------
+    st.subheader("📈 Market Overview")
+    st.dataframe(market_df, use_container_width=True)
 
 st.subheader("💼 Portfolio")
 
@@ -100,13 +95,9 @@ if st.button("Add Asset"):
             "date": pd.to_datetime(date),
             "quantity": quantity
         })
-        st.success("Added!")
+        st.success("Added")
 
 portfolio = st.session_state.portfolio
-
-# -------------------------
-# PORTFOLIO CALCULATION (USING SAME DATA)
-# -------------------------
 
 valid_assets = []
 
@@ -117,16 +108,15 @@ for asset in portfolio:
     if t not in prices.columns:
         continue
 
-    series = prices[t].dropna()
+    series = prices[t]
 
-    if series.empty:
+    if series.isna().all():
         continue
 
-    # 🔥 nearest buy date
-    nearest_date = series.index.get_indexer([d], method="nearest")[0]
-    buy_price = series.iloc[nearest_date]
+    idx = series.index.get_indexer([d], method="nearest")[0]
 
-    current_price = series.iloc[-1]
+    buy_price = float(series.iloc[idx])
+    current_price = float(series.iloc[-1])
 
     value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
@@ -135,10 +125,6 @@ for asset in portfolio:
     asset["cost"] = cost
 
     valid_assets.append(asset)
-
-# -------------------------
-# RESULTS
-# -------------------------
 
 if len(valid_assets) > 0:
 
@@ -155,7 +141,6 @@ if len(valid_assets) > 0:
     c2.metric("PnL", f"${pnl:,.2f}")
     c3.metric("PnL %", f"{pnl_pct:.2f}%")
 
-    # PIE
     fig, ax = plt.subplots()
     ax.pie(
         [a["value"] for a in valid_assets],
@@ -164,20 +149,21 @@ if len(valid_assets) > 0:
     )
     st.pyplot(fig)
 
-    # PERFORMANCE
     tick_list = [a["ticker"] for a in valid_assets]
-    port_prices = prices[tick_list]
+    port_df = prices[tick_list]
 
-    portfolio_series = (port_prices * [a["quantity"] for a in valid_assets]).sum(axis=1)
+    weights = np.array([a["quantity"] for a in valid_assets])
+    portfolio_series = (port_df * weights).sum(axis=1)
 
-    sp500 = yf.download("^GSPC", period="3mo")["Close"]
+    sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
+    sp500 = sp500.reindex(portfolio_series.index).ffill().bfill()
 
     portfolio_norm = portfolio_series / portfolio_series.iloc[0] * 100
-    sp500_norm = sp500 / sp500.iloc[0] * 100
+    sp_norm = sp500 / sp500.iloc[0] * 100
 
     fig2, ax2 = plt.subplots()
     ax2.plot(portfolio_norm, label="Portfolio")
-    ax2.plot(sp500_norm, label="S&P500")
+    ax2.plot(sp_norm, label="S&P500")
     ax2.legend()
     st.pyplot(fig2)
 
