@@ -1,129 +1,249 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
-
-st.title("📊 Portfolio Analyzer (Offline Working Version)")
+st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# FAKE MARKET DATA
+# MARKET OVERVIEW (75 ASSET - FIXED)
 # -------------------------
-np.random.seed(42)
 
-dates = pd.date_range(end=pd.Timestamp.today(), periods=120)
+stocks = [
+"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
+"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
+"XOM","CVX","ABBV","MRK","PFE"
+]
 
-def generate_price(start):
-    return start + np.cumsum(np.random.normal(0, 1, len(dates)))
+crypto = [
+"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
+"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
+"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
+"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
+]
 
-prices = pd.DataFrame({
-    "AAPL": generate_price(150),
-    "MSFT": generate_price(300),
-    "TSLA": generate_price(200),
-    "NVDA": generate_price(400),
-    "BTC": generate_price(30000),
-}, index=dates)
+bonds = [
+"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
+"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
+"USIG","TFLO","VTIP","BIV","TLH","EDV"
+]
 
-# -------------------------
-# MARKET OVERVIEW
-# -------------------------
-st.subheader("📈 Market Overview")
+tickers = stocks + crypto + bonds
 
-rows = []
+# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
+all_data = {}
 
-for col in prices.columns:
-    close = prices[col]
+with st.spinner("Market data yükleniyor..."):
+    for t in tickers:
+        try:
+            temp = yf.download(t, period="1mo", progress=False)["Close"]
+            if not temp.empty:
+                all_data[t] = temp
+        except:
+            continue
 
-    price = close.iloc[-1]
-    r1d = (close.iloc[-1] / close.iloc[-2] - 1) * 100
-    r1w = (close.iloc[-1] / close.iloc[-6] - 1) * 100
-    r1m = (close.iloc[-1] / close.iloc[-22] - 1) * 100
+if len(all_data) > 0:
+    close_prices = pd.DataFrame(all_data)
 
-    rows.append({
-        "Ticker": col,
-        "Price": round(price, 2),
-        "1D %": round(r1d, 2),
-        "1W %": round(r1w, 2),
-        "1M %": round(r1m, 2)
+    latest_prices = close_prices.iloc[-1]
+    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
+    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
+    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
+    df = pd.DataFrame({
+        "Ticker": latest_prices.index,
+        "Price": latest_prices.values,
+        "1D %": returns_1d.values,
+        "1W %": returns_1w.values,
+        "1M %": returns_1m.values
     })
 
-overview = pd.DataFrame(rows)
-st.dataframe(overview, use_container_width=True)
+    df["Asset Type"] = df["Ticker"].apply(
+        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
+    )
+
+    st.subheader("📈 Market Overview")
+    st.dataframe(df)
 
 # -------------------------
 # PORTFOLIO INPUT
 # -------------------------
-st.subheader("💼 Portfolio")
+st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
-    st.session_state.portfolio = {}
+    st.session_state.portfolio = []
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.selectbox("Select Asset", prices.columns)
+    ticker = st.text_input("Ticker (örn: AAPL)")
+    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
 
 with col2:
-    quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
+    date = st.date_input("Buy Date")
 
-if st.button("Add / Update Asset"):
-    if quantity > 0:
-        st.session_state.portfolio[ticker] = quantity
-    elif ticker in st.session_state.portfolio:
-        del st.session_state.portfolio[ticker]
+    if date > pd.Timestamp.today().date():
+        date = pd.Timestamp.today().date()
+
+with col3:
+    quantity = st.number_input("Quantity", min_value=0.0)
+
+if st.button("Add Asset"):
+    if ticker != "" and quantity > 0:
+        st.session_state.portfolio.append({
+            "ticker": ticker,
+            "date": pd.to_datetime(date),
+            "quantity": quantity
+        })
+        st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# PORTFOLIO CALC
+# CALCULATIONS
 # -------------------------
-if portfolio:
+valid_assets = []
 
-    values = {}
-    for t, qty in portfolio.items():
-        price = prices[t].iloc[-1]
-        values[t] = price * qty
+for asset in portfolio:
+    t = asset["ticker"]
+    d = asset["date"]
 
-    total_value = sum(values.values())
+    try:
+        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+
+        if hist.empty:
+            continue
+
+        hist = hist.reset_index()
+        hist["diff"] = (hist["Date"] - d).abs()
+        row = hist.loc[hist["diff"].idxmin()]
+
+        buy_price = row["Close"]
+
+        if isinstance(buy_price, pd.Series):
+            buy_price = buy_price.iloc[0]
+
+        if pd.isna(buy_price):
+            continue
+
+        buy_price = float(buy_price)
+
+        current_data = yf.download(t, period="1d", progress=False)
+
+        if current_data.empty:
+            continue
+
+        cp = current_data["Close"].dropna()
+
+        if cp.empty:
+            continue
+
+        current_price = cp.iloc[-1]
+
+        if isinstance(current_price, pd.Series):
+            current_price = current_price.iloc[0]
+
+        current_price = float(current_price)
+
+    except:
+        continue
+
+    value = current_price * asset["quantity"]
+    cost = buy_price * asset["quantity"]
+
+    asset["value"] = value
+    asset["cost"] = cost
+    asset["buy_price"] = buy_price
+    asset["current_price"] = current_price
+
+    valid_assets.append(asset)
+
+# -------------------------
+# RESULTS
+# -------------------------
+if len(valid_assets) > 0:
+
+    total_value = sum(a["value"] for a in valid_assets)
+    total_cost = sum(a["cost"] for a in valid_assets)
+
+    total_pnl = total_value - total_cost
+    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
 
     c1.metric("Total Value", f"${total_value:,.2f}")
-    c2.metric("Number of Assets", len(portfolio))
+    c2.metric("PnL ($)", f"${total_pnl:,.2f}")
+    c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
-    # -------------------------
-    # PIE CHART
-    # -------------------------
-    fig1, ax1 = plt.subplots()
-    ax1.pie(values.values(), labels=values.keys(), autopct="%1.1f%%")
-    ax1.set_title("Portfolio Allocation")
+    for a in valid_assets:
+        a["weight"] = a["value"] / total_value
+
+    fig1, ax1 = plt.subplots(figsize=(4,4))
+    ax1.pie([a["weight"] for a in valid_assets],
+            labels=[a["ticker"] for a in valid_assets],
+            autopct='%1.1f%%')
     st.pyplot(fig1)
 
-    # -------------------------
-    # PERFORMANCE
-    # -------------------------
-    st.subheader("📈 Portfolio Performance")
+    tickers = [a["ticker"] for a in valid_assets]
+    start_date = min(a["date"] for a in valid_assets)
 
-    portfolio_series = pd.Series(0, index=prices.index)
+    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
 
-    for t, qty in portfolio.items():
-        portfolio_series += prices[t] * qty
+    if isinstance(price_data, pd.Series):
+        price_data = price_data.to_frame()
 
-    normalized = portfolio_series / portfolio_series.iloc[0] * 100
+    portfolio_value = pd.DataFrame(index=price_data.index)
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(normalized, label="Portfolio")
-    ax2.set_title("Normalized Performance")
+    for a in valid_assets:
+        if a["ticker"] in price_data.columns:
+            portfolio_value[a["ticker"]] = price_data[a["ticker"]] * a["quantity"]
+
+    portfolio_value["Total"] = portfolio_value.sum(axis=1)
+
+    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
+
+    portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
+    sp500_norm = sp500 / sp500.iloc[0] * 100
+
+    fig2, ax2 = plt.subplots(figsize=(6,3))
+    ax2.plot(portfolio_norm, label="Portfolio")
+    ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
     st.pyplot(fig2)
 
-else:
-    st.info("Portföye asset ekle")
+    portfolio_returns = portfolio_value["Total"].pct_change()
+    sp500_returns = sp500.pct_change()
 
-# -------------------------
-# DEBUG INFO
-# -------------------------
-st.subheader("🛠 Debug Info")
-st.write("Bu versiyon internet kullanmaz → çalışıyorsa sistemin OK")
+    df_returns = pd.concat([portfolio_returns, sp500_returns], axis=1).dropna()
+    df_returns.columns = ["portfolio", "market"]
+
+    if len(df_returns) > 2:
+
+        cov = df_returns["portfolio"].cov(df_returns["market"])
+        var = df_returns["market"].var()
+
+        beta = cov / var if var != 0 else 0
+
+        expected_return = df_returns["portfolio"].mean() * 252
+        volatility = df_returns["portfolio"].std() * np.sqrt(252)
+
+        risk_free_rate = 0.02
+        market_return = df_returns["market"].mean() * 252
+
+        capm = risk_free_rate + beta * (market_return - risk_free_rate)
+        alpha = expected_return - capm
+
+        st.subheader("📉 Risk Metrics")
+        st.write(f"Expected Return: {expected_return:.2%}")
+        st.write(f"Volatility: {volatility:.2%}")
+        st.write(f"Beta: {beta:.2f}")
+        st.write(f"Alpha: {alpha:.2%}")
+        st.write(f"CAPM: {capm:.2%}")
+
+    else:
+        st.warning("Risk metrics hesaplamak için yeterli veri yok")
+
+else:
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
