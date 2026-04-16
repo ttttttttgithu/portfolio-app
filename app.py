@@ -4,11 +4,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Sayfa Genişliği
 st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# ASSET LISTS
+# VARLIK LİSTELERİ
 # -------------------------
 stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ","V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP","XOM","CVX","ABBV","MRK","PFE"]
 crypto = ["BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD","DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD","LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD","APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"]
@@ -17,53 +18,69 @@ bonds = ["TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT","VCIT","VC
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# MARKET OVERVIEW (FIXED DATA FETCHING)
+# MARKET VERİSİ ÇEKME (GARANTİ YÖNTEM)
 # -------------------------
-@st.cache_data(ttl=3600)
-def load_market_data(ticker_list):
-    # Toplu veri indirme (Daha hızlı ve stabil)
-    raw_data = yf.download(ticker_list, period="2mo", progress=False)["Close"]
+@st.cache_data(ttl=600)
+def get_all_market_data(ticker_list):
+    data_list = []
+    # İlerleme çubuğu
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
-    # Veri temizleme: Eğer sütunlar MultiIndex ise düzelt
-    if isinstance(raw_data.columns, pd.MultiIndex):
-        raw_data.columns = raw_data.columns.get_level_values(1)
+    for i, t in enumerate(ticker_list):
+        try:
+            status_text.text(f"Veri çekiliyor: {t}")
+            # Son 2 aylık veriyi çekiyoruz (değişim oranları için yeterli)
+            df_temp = yf.download(t, period="2mo", progress=False)
+            
+            if not df_temp.empty:
+                # Sütun yapısını düzelt (MultiIndex gelirse sadece Close al)
+                if isinstance(df_temp.columns, pd.MultiIndex):
+                    df_close = df_temp['Close'][t]
+                else:
+                    df_close = df_temp['Close']
+                
+                # Fiyat ve Değişimler
+                last_price = float(df_close.iloc[-1])
+                ret_1d = ((df_close.iloc[-1] / df_close.iloc[-2]) - 1) * 100 if len(df_close) > 1 else 0
+                ret_1w = ((df_close.iloc[-1] / df_close.iloc[-6]) - 1) * 100 if len(df_close) > 5 else 0
+                ret_1m = ((df_close.iloc[-1] / df_close.iloc[-22]) - 1) * 100 if len(df_close) > 21 else 0
+                
+                data_list.append({
+                    "Ticker": t,
+                    "Price": last_price,
+                    "1D %": ret_1d,
+                    "1W %": ret_1w,
+                    "1M %": ret_1m,
+                    "Asset Type": "Stock" if t in stocks else ("Crypto" if t in crypto else "Bond")
+                })
+        except Exception as e:
+            continue
+        progress_bar.progress((i + 1) / len(ticker_list))
     
-    return raw_data
+    status_text.empty()
+    progress_bar.empty()
+    return pd.DataFrame(data_list)
 
-with st.spinner("Market verileri güncelleniyor..."):
-    close_prices = load_market_data(tickers)
+# Veriyi Göster
+market_df = get_all_market_data(tickers)
 
-if not close_prices.empty:
-    # Son geçerli fiyatları al (NaN olmayan son satırlar)
-    latest_prices = close_prices.ffill().iloc[-1]
-    
-    # Değişimleri hesapla
-    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
-
-    df = pd.DataFrame({
-        "Ticker": latest_prices.index,
-        "Price": latest_prices.values,
-        "1D %": returns_1d.values,
-        "1W %": returns_1w.values,
-        "1M %": returns_1m.values
-    }).dropna(subset=["Price"]) # Fiyatı olmayanları listeden çıkar
-
-    df["Asset Type"] = df["Ticker"].apply(
-        lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
-    )
-
+if not market_df.empty:
     st.subheader("📈 Market Overview")
-    st.dataframe(df.style.format({
-        "Price": "{:.2f}",
-        "1D %": "{:+.2f}%",
-        "1W %": "{:+.2f}%",
-        "1M %": "{:+.2f}%"
-    }), use_container_width=True)
+    
+    # Stil verme (Renkler)
+    def color_negative_positive(val):
+        if isinstance(val, (int, float)):
+            color = 'red' if val < 0 else 'green'
+            return f'color: {color}'
+        return ''
+
+    st.dataframe(market_df.style.applymap(color_negative_positive, subset=['1D %', '1W %', '1M %'])
+                 .format({"Price": "{:.2f}", "1D %": "{:+.2f}%", "1W %": "{:+.2f}%", "1M %": "{:+.2f}%"}), 
+                 use_container_width=True, height=400)
 
 # -------------------------
-# PORTFOLIO INPUT
+# PORTFÖY GİRİŞİ
 # -------------------------
 st.divider()
 st.subheader("💼 Add Portfolio")
@@ -73,7 +90,7 @@ if "portfolio" not in st.session_state:
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    ticker_input = st.text_input("Ticker (örn: AAPL)").strip().upper()
+    ticker_input = st.text_input("Ticker (örn: NVDA)").strip().upper()
 with col2:
     buy_date = st.date_input("Buy Date")
 with col3:
@@ -89,89 +106,47 @@ if st.button("Add Asset"):
         st.success(f"{ticker_input} eklendi!")
 
 # -------------------------
-# PORTFOLIO CALCULATIONS
+# HESAPLAMALAR VE ANALİZ
 # -------------------------
-valid_assets = []
-for asset in st.session_state.portfolio:
-    t = asset["ticker"]
-    d = asset["date"]
-    
-    try:
-        # Alış fiyatı için o tarihe yakın veri çek
-        hist = yf.download(t, start=d - pd.Timedelta(days=7), end=d + pd.Timedelta(days=7), progress=False)["Close"]
-        if hist.empty: continue
+if st.session_state.portfolio:
+    valid_assets = []
+    for asset in st.session_state.portfolio:
+        try:
+            # Alış fiyatı (o günkü veri)
+            h = yf.download(asset["ticker"], start=asset["date"] - pd.Timedelta(days=5), 
+                            end=asset["date"] + pd.Timedelta(days=5), progress=False)['Close']
+            
+            # Güncel fiyat
+            c = yf.download(asset["ticker"], period="1d", progress=False)['Close']
+            
+            if not h.empty and not c.empty:
+                b_price = float(h.iloc[-1])
+                c_price = float(c.iloc[-1])
+                
+                valid_assets.append({
+                    "ticker": asset["ticker"],
+                    "value": c_price * asset["quantity"],
+                    "cost": b_price * asset["quantity"],
+                    "pnl": (c_price - b_price) * asset["quantity"],
+                    "pnl_pct": ((c_price / b_price) - 1) * 100
+                })
+        except: continue
+
+    if valid_assets:
+        res_df = pd.DataFrame(valid_assets)
+        st.divider()
+        st.subheader("📊 Portfolio Summary")
         
-        buy_price = float(hist.ffill().iloc[-1])
+        c1, c2, c3 = st.columns(3)
+        total_val = res_df['value'].sum()
+        total_pnl = res_df['pnl'].sum()
+        total_pnl_p = (total_pnl / res_df['cost'].sum()) * 100
         
-        # Güncel fiyat
-        current_data = yf.download(t, period="1d", progress=False)["Close"]
-        if current_data.empty: continue
-        current_price = float(current_data.ffill().iloc[-1])
+        c1.metric("Total Value", f"${total_val:,.2f}")
+        c2.metric("Total PnL ($)", f"${total_pnl:,.2f}")
+        c3.metric("Total PnL (%)", f"{total_pnl_p:.2f}%")
         
-        asset["buy_price"] = buy_price
-        asset["current_price"] = current_price
-        asset["value"] = current_price * asset["quantity"]
-        asset["cost"] = buy_price * asset["quantity"]
-        valid_assets.append(asset)
-    except:
-        continue
-
-if valid_assets:
-    st.divider()
-    st.subheader("📊 Portfolio Summary")
-    
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
-    total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Value", f"${total_value:,.2f}")
-    m2.metric("Total PnL", f"${total_pnl:,.2f}", f"{total_pnl_pct:.2f}%")
-    
-    # Pasta Grafiği
-    fig1, ax1 = plt.subplots()
-    ax1.pie([a["value"] for a in valid_assets], labels=[a["ticker"] for a in valid_assets], autopct='%1.1f%%')
-    st.pyplot(fig1)
-
-    # Risk Analizi (S&P 500 Karşılaştırmalı)
-    tickers_p = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in valid_assets)
-    
-    combined_data = yf.download(tickers_p + ["^GSPC"], start=start_date, progress=False)["Close"]
-    if isinstance(combined_data, pd.Series): combined_data = combined_data.to_frame()
-    
-    # Portföy zaman serisi hesaplama
-    portfolio_ts = pd.Series(0, index=combined_data.index)
-    for a in valid_assets:
-        if a["ticker"] in combined_data.columns:
-            portfolio_ts += combined_data[a["ticker"]] * a["quantity"]
-    
-    # Normalizasyon (Başlangıç 100)
-    port_norm = (portfolio_ts / portfolio_ts.iloc[0]) * 100
-    sp500_norm = (combined_data["^GSPC"] / combined_data["^GSPC"].iloc[0]) * 100
-
-    st.subheader("📈 Performance vs S&P 500")
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    ax2.plot(port_norm, label="My Portfolio")
-    ax2.plot(sp500_norm, label="S&P 500")
-    ax2.legend()
-    st.pyplot(fig2)
-
-    # Risk Metrikleri
-    returns = portfolio_ts.pct_change().dropna()
-    market_returns = combined_data["^GSPC"].pct_change().dropna()
-    
-    # Verileri hizala
-    df_risk = pd.concat([returns, market_returns], axis=1).dropna()
-    df_risk.columns = ['port', 'mkt']
-    
-    if len(df_risk) > 5:
-        beta = df_risk.cov().iloc[0,1] / df_risk['mkt'].var()
-        vol = returns.std() * np.sqrt(252)
-        st.subheader("📉 Risk Metrics")
-        c1, c2 = st.columns(2)
-        c1.write(f"**Beta:** {beta:.2f}")
-        c2.write(f"**Annual Volatility:** {vol:.2%}")
-else:
-    st.info("Lütfen analiz için portföyünüze varlık ekleyin.")
+        # Grafik
+        fig, ax = plt.subplots(figsize=(6,3))
+        ax.pie(res_df['value'], labels=res_df['ticker'], autopct='%1.1f%%')
+        st.pyplot(fig)
