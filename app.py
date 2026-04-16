@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW
+# MARKET OVERVIEW (FINAL FIX)
 # -------------------------
 
 stocks = [
@@ -31,26 +31,23 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 DATA FETCH (FIXED)
-all_data = {}
+# 🔥 TEK SEFERDE DATA ÇEK (KRİTİK FIX)
+data = yf.download(tickers, period="1mo", group_by="ticker", progress=False)
 
-with st.spinner("Market data yükleniyor..."):
+if not data.empty:
+
+    close_prices = pd.DataFrame()
+
     for t in tickers:
         try:
-            temp = yf.download(t, period="1mo", progress=False)["Close"]
-            if not temp.empty:
-                all_data[t] = temp
+            if t in data.columns.levels[0]:
+                close = data[t]["Close"]
+                if not close.empty:
+                    close_prices[t] = close
         except:
             continue
 
-if len(all_data) > 0:
-    close_prices = pd.concat(all_data, axis=1)
-
-    # 🔥 duplicate fix
-    close_prices.columns = close_prices.columns.get_level_values(0)
-
-    # 🔥 NA fix (stocks için kritik)
-    close_prices = close_prices.dropna(how="all")
+    # 🔥 boşlukları doldur (stocks için kritik)
     close_prices = close_prices.ffill()
 
     latest_prices = close_prices.iloc[-1]
@@ -59,7 +56,7 @@ if len(all_data) > 0:
     returns_1w = close_prices.pct_change(5).iloc[-1] * 100
     returns_1m = close_prices.pct_change(21).iloc[-1] * 100
 
-    # 🔥 NaN fix
+    # 🔥 NaN temizle
     returns_1d = returns_1d.fillna(0)
     returns_1w = returns_1w.fillna(0)
     returns_1m = returns_1m.fillna(0)
@@ -132,32 +129,10 @@ for asset in portfolio:
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
-        buy_price = row["Close"]
-
-        if isinstance(buy_price, pd.Series):
-            buy_price = buy_price.iloc[0]
-
-        if pd.isna(buy_price):
-            continue
-
-        buy_price = float(buy_price)
+        buy_price = float(row["Close"])
 
         current_data = yf.download(t, period="1d", progress=False)
-
-        if current_data.empty:
-            continue
-
-        cp = current_data["Close"].dropna()
-
-        if cp.empty:
-            continue
-
-        current_price = cp.iloc[-1]
-
-        if isinstance(current_price, pd.Series):
-            current_price = current_price.iloc[0]
-
-        current_price = float(current_price)
+        current_price = float(current_data["Close"].dropna().iloc[-1])
 
     except:
         continue
@@ -167,8 +142,6 @@ for asset in portfolio:
 
     asset["value"] = value
     asset["cost"] = cost
-    asset["buy_price"] = buy_price
-    asset["current_price"] = current_price
 
     valid_assets.append(asset)
 
@@ -262,4 +235,4 @@ if len(valid_assets) > 0:
         st.warning("Risk metrics hesaplamak için yeterli veri yok")
 
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et.")
