@@ -14,43 +14,37 @@ bonds = ["TLT","IEF","BND"]
 ALL_TICKERS = stocks + crypto + bonds
 
 # -------------------------
-# LOAD DATA (FINAL HARD FIX)
+# LOAD DATA (FINAL WORKING VERSION)
 # -------------------------
 @st.cache_data
 def load_prices():
-    all_series = []
+    df = yf.download(
+        ALL_TICKERS,
+        period="3mo",
+        interval="1d",
+        auto_adjust=True,
+        progress=False
+    )
 
-    for t in ALL_TICKERS:
-        try:
-            df = yf.download(t, period="3mo", interval="1d", progress=False)
-
-            if df.empty or "Close" not in df:
-                continue
-
-            s = df["Close"].copy()
-            s.name = t
-            all_series.append(s)
-
-        except:
-            continue
-
-    if not all_series:
+    if df.empty:
         return pd.DataFrame()
 
-    prices = pd.concat(all_series, axis=1)
+    if isinstance(df.columns, pd.MultiIndex):
+        close = df["Close"]
+    else:
+        close = df[["Close"]]
+        close.columns = ALL_TICKERS[:1]
 
-    # CRITICAL: remove duplicate indices
-    prices = prices[~prices.index.duplicated(keep="last")]
+    close = close.sort_index()
 
-    prices = prices.sort_index()
+    # 🔥 CRITICAL FIX: DO NOT REINDEX / DO NOT CREATE FAKE DAYS
+    # Only forward fill existing trading days
+    close = close.ffill()
 
-    # DO NOT create fake dates
-    prices = prices.ffill()
+    # 🔥 DROP BAD COLUMNS
+    close = close.dropna(axis=1, how="all")
 
-    # FINAL: drop completely broken columns
-    prices = prices.dropna(axis=1, how="all")
-
-    return prices
+    return close
 
 prices = load_prices()
 
@@ -61,26 +55,23 @@ if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    def calc_return(days):
-        out = []
+    def calc_ret(days):
+        result = []
         for col in prices.columns:
             s = prices[col].dropna()
-
             if len(s) > days:
                 r = (s.iloc[-1] / s.iloc[-1 - days] - 1) * 100
             else:
                 r = np.nan
-
-            out.append(r)
-
-        return pd.Series(out, index=prices.columns)
+            result.append(r)
+        return result
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
         "Price": latest.values,
-        "1D %": calc_return(1).values,
-        "1W %": calc_return(5).values,
-        "1M %": calc_return(21).values
+        "1D %": calc_ret(1),
+        "1W %": calc_ret(5),
+        "1M %": calc_ret(21)
     })
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
@@ -136,7 +127,7 @@ for asset in portfolio:
     if len(s) < 2:
         continue
 
-    # STRICT: only past data
+    # STRICT: ONLY USE PAST AVAILABLE DATA
     s = s[s.index <= d]
 
     if s.empty:
@@ -189,6 +180,7 @@ if len(valid_assets) > 0:
     portfolio_series = (port_df * quantities).sum(axis=1)
 
     sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
+
     sp500 = sp500.reindex(portfolio_series.index).ffill()
 
     portfolio_norm = portfolio_series / portfolio_series.iloc[0] * 100
