@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (75 ASSET - FIXED)
+# MARKET OVERVIEW (FIXED)
 # -------------------------
 
 stocks = [
@@ -31,25 +31,49 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
-all_data = {}
+data_dict = {}
 
 with st.spinner("Market data yükleniyor..."):
     for t in tickers:
         try:
-            temp = yf.download(t, period="1mo", progress=False)["Close"]
-            if not temp.empty:
-                all_data[t] = temp
+            df = yf.Ticker(t).history(period="2mo")
+
+            if df.empty:
+                continue
+
+            close = df["Close"].dropna()
+
+            # minimum veri şartı
+            if len(close) < 5:
+                continue
+
+            data_dict[t] = close
+
         except:
             continue
 
-if len(all_data) > 0:
-    close_prices = pd.DataFrame(all_data)
+# -------------------------
+# DATAFRAME BUILD
+# -------------------------
+
+if len(data_dict) > 0:
+
+    close_prices = pd.DataFrame(data_dict)
+
+    # eksikleri doldur
+    close_prices = close_prices.ffill().dropna(how="all")
 
     latest_prices = close_prices.iloc[-1]
-    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+
+    def safe_return(period):
+        if len(close_prices) > period:
+            return close_prices.pct_change(period).iloc[-1] * 100
+        else:
+            return pd.Series(index=close_prices.columns, data=np.nan)
+
+    returns_1d = safe_return(1)
+    returns_1w = safe_return(5)
+    returns_1m = safe_return(21)
 
     df = pd.DataFrame({
         "Ticker": latest_prices.index,
@@ -63,12 +87,15 @@ if len(all_data) > 0:
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
+    df = df.dropna(subset=["Price"])
+
     st.subheader("📈 Market Overview")
     st.dataframe(df)
 
 # -------------------------
 # PORTFOLIO INPUT
 # -------------------------
+
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -77,8 +104,7 @@ if "portfolio" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker (örn: AAPL)")
-    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
+    ticker = st.text_input("Ticker (örn: AAPL)").upper().strip()
 
 with col2:
     date = st.date_input("Buy Date")
@@ -103,6 +129,7 @@ portfolio = st.session_state.portfolio
 # -------------------------
 # CALCULATIONS
 # -------------------------
+
 valid_assets = []
 
 for asset in portfolio:
@@ -110,7 +137,8 @@ for asset in portfolio:
     d = asset["date"]
 
     try:
-        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+        hist = yf.Ticker(t).history(start=d - pd.Timedelta(days=5),
+                                    end=d + pd.Timedelta(days=5))
 
         if hist.empty:
             continue
@@ -119,32 +147,14 @@ for asset in portfolio:
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
-        buy_price = row["Close"]
+        buy_price = float(row["Close"])
 
-        if isinstance(buy_price, pd.Series):
-            buy_price = buy_price.iloc[0]
-
-        if pd.isna(buy_price):
-            continue
-
-        buy_price = float(buy_price)
-
-        current_data = yf.download(t, period="1d", progress=False)
+        current_data = yf.Ticker(t).history(period="1d")
 
         if current_data.empty:
             continue
 
-        cp = current_data["Close"].dropna()
-
-        if cp.empty:
-            continue
-
-        current_price = cp.iloc[-1]
-
-        if isinstance(current_price, pd.Series):
-            current_price = current_price.iloc[0]
-
-        current_price = float(current_price)
+        current_price = float(current_data["Close"].iloc[-1])
 
     except:
         continue
@@ -162,6 +172,7 @@ for asset in portfolio:
 # -------------------------
 # RESULTS
 # -------------------------
+
 if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
@@ -180,7 +191,7 @@ if len(valid_assets) > 0:
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
-    fig1, ax1 = plt.subplots(figsize=(4,4))
+    fig1, ax1 = plt.subplots()
     ax1.pie([a["weight"] for a in valid_assets],
             labels=[a["ticker"] for a in valid_assets],
             autopct='%1.1f%%')
@@ -207,43 +218,11 @@ if len(valid_assets) > 0:
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
 
-    fig2, ax2 = plt.subplots(figsize=(6,3))
+    fig2, ax2 = plt.subplots()
     ax2.plot(portfolio_norm, label="Portfolio")
     ax2.plot(sp500_norm, label="S&P 500")
     ax2.legend()
     st.pyplot(fig2)
 
-    portfolio_returns = portfolio_value["Total"].pct_change()
-    sp500_returns = sp500.pct_change()
-
-    df_returns = pd.concat([portfolio_returns, sp500_returns], axis=1).dropna()
-    df_returns.columns = ["portfolio", "market"]
-
-    if len(df_returns) > 2:
-
-        cov = df_returns["portfolio"].cov(df_returns["market"])
-        var = df_returns["market"].var()
-
-        beta = cov / var if var != 0 else 0
-
-        expected_return = df_returns["portfolio"].mean() * 252
-        volatility = df_returns["portfolio"].std() * np.sqrt(252)
-
-        risk_free_rate = 0.02
-        market_return = df_returns["market"].mean() * 252
-
-        capm = risk_free_rate + beta * (market_return - risk_free_rate)
-        alpha = expected_return - capm
-
-        st.subheader("📉 Risk Metrics")
-        st.write(f"Expected Return: {expected_return:.2%}")
-        st.write(f"Volatility: {volatility:.2%}")
-        st.write(f"Beta: {beta:.2f}")
-        st.write(f"Alpha: {alpha:.2%}")
-        st.write(f"CAPM: {capm:.2%}")
-
-    else:
-        st.warning("Risk metrics hesaplamak için yeterli veri yok")
-
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok.")
