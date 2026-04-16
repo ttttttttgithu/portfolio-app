@@ -7,9 +7,21 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW
+# MARKET OVERVIEW (100 ASSET)
 # -------------------------
-stocks = ["AAPL", "MSFT"]
+stocks = [
+"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
+"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
+"XOM","CVX","ABBV","MRK","PFE","BAC","WMT","CSCO","INTC","T",
+"ORCL","CRM","ACN","COST","AVGO","MCD","DHR","NEE","TXN","LIN",
+"NKE","AMD","QCOM","HON","LOW","UPS","PM","INTU","IBM","CAT",
+"GS","MS","BLK","SCHW","SPGI","AMAT","ISRG","NOW","PLD","MDT",
+"GE","BA","MMM","F","GM","PYPL","SQ","UBER","LYFT","SNAP",
+"SHOP","ZM","DOCU","ROKU","TTD","CRWD","NET","OKTA","DDOG","SNOW",
+"PANW","ZS","TEAM","ASML","TSM","BABA","JD","PDD","SE","MELI",
+"RIO","BHP","VALE","GOLD","SLV","GLD","QQQ","SPY","DIA","ARKK"
+]
+
 crypto = ["BTC-USD", "ETH-USD"]
 bonds = ["TLT", "IEF"]
 
@@ -19,6 +31,9 @@ data = yf.download(tickers, period="1mo", progress=False)
 
 if not data.empty:
     close_prices = data["Close"]
+
+    # 🔥 kritik fix
+    close_prices = close_prices.dropna(axis=1)
 
     latest_prices = close_prices.iloc[-1]
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
@@ -180,7 +195,6 @@ if len(valid_assets) > 0:
 
     sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
 
-    # normalize
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
 
@@ -191,7 +205,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig2)
 
     # -------------------------
-    # 🔥 RISK METRICS (FIXED)
+    # RISK METRICS
     # -------------------------
     portfolio_returns = portfolio_value["Total"].pct_change()
     sp500_returns = sp500.pct_change()
