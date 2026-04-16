@@ -5,209 +5,230 @@ import numpy as np
 import plotly.graph_objects as go
 
 # -------------------------
-# PAGE CONFIG + STYLE
+# CONFIG
 # -------------------------
-st.set_page_config(page_title="Portfolio Analyzer", page_icon="📊", layout="wide")
+st.set_page_config(layout="wide", page_title="Terminal", page_icon="📊")
 
+# -------------------------
+# BLOOMBERG STYLE CSS
+# -------------------------
 st.markdown("""
 <style>
-body {background-color: #0E1117; color: white;}
-.metric-box {
-    background-color: #1c1f26;
-    padding: 20px;
-    border-radius: 12px;
-    text-align: center;
-    box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+
+/* MAIN BACKGROUND */
+.stApp {
+    background-color: #0a0a0a;
+    color: #00ff9f;
+    font-family: monospace;
 }
-h1, h2, h3 {color: #00FFAA;}
+
+/* SIDEBAR */
+section[data-testid="stSidebar"] {
+    background-color: #111;
+}
+
+/* PANELS */
+.panel {
+    background-color: #111;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #222;
+}
+
+/* TITLE */
+.title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #00ff9f;
+}
+
+/* METRICS */
+.metric {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.green { color: #00ff9f; }
+.red { color: #ff4d4d; }
+
+/* TABLE */
+[data-testid="stDataFrame"] {
+    background-color: #111;
+    border-radius: 8px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Portfolio Analyzer")
+# -------------------------
+# HEADER
+# -------------------------
+st.markdown('<div class="title">📊 BLOOMBERG TERMINAL</div>', unsafe_allow_html=True)
 
 # -------------------------
 # SIDEBAR
 # -------------------------
-st.sidebar.title("📊 Controls")
-selected_type = st.sidebar.selectbox(
-    "Asset Type Filter",
+st.sidebar.title("TERMINAL")
+
+asset_type = st.sidebar.selectbox(
+    "Asset Type",
     ["All", "Stock", "Crypto", "Bond"]
 )
 
 # -------------------------
 # ASSETS
 # -------------------------
-stocks = [
-"AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
-"V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
-"XOM","CVX","ABBV","MRK","PFE"
-]
-
-crypto = [
-"BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
-"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
-"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
-"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
-]
-
-bonds = [
-"TLT","IEF","SHY","BND","AGG","LQD","HYG","TIP","MUB","VGIT",
-"VCIT","VCSH","BLV","BSV","SCHZ","SPTL","SPSB","IGSB","FLOT",
-"USIG","TFLO","VTIP","BIV","TLH","EDV"
-]
+stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA"]
+crypto = ["BTC-USD","ETH-USD","SOL-USD"]
+bonds = ["TLT","IEF","BND"]
 
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# MARKET DATA
+# LOAD DATA
 # -------------------------
-all_data = {}
+data = {}
 
-with st.spinner("Market data yükleniyor..."):
-    for t in tickers:
-        try:
-            temp = yf.download(t, period="1mo", progress=False)["Close"]
-            if not temp.empty:
-                all_data[t] = temp
-        except:
-            continue
+for t in tickers:
+    try:
+        df = yf.download(t, period="1mo", progress=False)["Close"]
+        if not df.empty:
+            data[t] = df
+    except:
+        pass
 
-if len(all_data) > 0:
-    close_prices = pd.DataFrame(all_data)
+prices = pd.DataFrame(data)
 
-    latest_prices = close_prices.iloc[-1]
-    returns_1d = close_prices.pct_change(1).iloc[-1] * 100
-    returns_1w = close_prices.pct_change(5).iloc[-1] * 100
-    returns_1m = close_prices.pct_change(21).iloc[-1] * 100
+# -------------------------
+# GRID LAYOUT
+# -------------------------
+col1, col2 = st.columns([2,1])
+
+# -------------------------
+# LEFT PANEL (MARKET)
+# -------------------------
+with col1:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+    st.subheader("MARKET DATA")
+
+    latest = prices.iloc[-1]
+    ret = prices.pct_change().iloc[-1] * 100
 
     df = pd.DataFrame({
-        "Ticker": latest_prices.index,
-        "Price": latest_prices.values,
-        "1D %": returns_1d.values,
-        "1W %": returns_1w.values,
-        "1M %": returns_1m.values
+        "Ticker": latest.index,
+        "Price": latest.values,
+        "%": ret.values
     })
 
-    df["Asset Type"] = df["Ticker"].apply(
+    df["Type"] = df["Ticker"].apply(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
-    if selected_type != "All":
-        df = df[df["Asset Type"] == selected_type]
+    if asset_type != "All":
+        df = df[df["Type"] == asset_type]
 
-    st.subheader("📈 Market Overview")
     st.dataframe(df, use_container_width=True)
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # -------------------------
-# PORTFOLIO INPUT
+# RIGHT PANEL (METRICS)
 # -------------------------
-st.subheader("💼 Add Portfolio")
+with col2:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+    st.subheader("MARKET SUMMARY")
+
+    try:
+        sp = yf.download("^GSPC", period="5d", progress=False)["Close"]
+        change = (sp.iloc[-1] / sp.iloc[0] - 1) * 100
+
+        color = "green" if change > 0 else "red"
+
+        st.markdown(f'<div class="metric {color}">S&P 500: {change:.2f}%</div>', unsafe_allow_html=True)
+
+    except:
+        st.write("No data")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# -------------------------
+# PORTFOLIO
+# -------------------------
+st.markdown('<div class="panel">', unsafe_allow_html=True)
+
+st.subheader("PORTFOLIO")
 
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-col1, col2, col3 = st.columns(3)
+c1, c2 = st.columns(2)
 
-with col1:
-    ticker = st.text_input("Ticker").upper().strip()
+with c1:
+    ticker = st.text_input("Ticker").upper()
 
-with col2:
-    date = st.date_input("Buy Date")
+with c2:
+    qty = st.number_input("Quantity", min_value=0.0)
 
-with col3:
-    quantity = st.number_input("Quantity", min_value=0.0)
-
-if st.button("Add Asset"):
-    if ticker and quantity > 0:
-        st.session_state.portfolio.append({
-            "ticker": ticker,
-            "date": pd.to_datetime(date),
-            "quantity": quantity
-        })
+if st.button("ADD"):
+    if ticker and qty > 0:
+        st.session_state.portfolio.append((ticker, qty))
 
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# CALCULATIONS
+# PORTFOLIO CALC
 # -------------------------
-valid_assets = []
+if portfolio:
 
-for asset in portfolio:
-    t = asset["ticker"]
-    d = asset["date"]
+    values = []
+    labels = []
 
-    try:
-        hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
+    for t, q in portfolio:
+        try:
+            price = yf.download(t, period="1d", progress=False)["Close"].iloc[-1]
+            values.append(price * q)
+            labels.append(t)
+        except:
+            pass
 
-        if hist.empty:
-            continue
+    total = sum(values)
 
-        hist = hist.reset_index()
-        hist["diff"] = (hist["Date"] - d).abs()
-        row = hist.loc[hist["diff"].idxmin()]
+    st.markdown(f"<div class='metric green'>Total Value: ${total:,.2f}</div>", unsafe_allow_html=True)
 
-        buy_price = float(row["Close"])
-        current_price = float(yf.download(t, period="1d", progress=False)["Close"].iloc[-1])
+    # PIE
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
+    fig.update_layout(template="plotly_dark")
+    st.plotly_chart(fig, use_container_width=True)
 
-    except:
-        continue
-
-    value = current_price * asset["quantity"]
-    cost = buy_price * asset["quantity"]
-
-    asset["value"] = value
-    asset["cost"] = cost
-
-    valid_assets.append(asset)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
-# RESULTS
+# PERFORMANCE CHART
 # -------------------------
-if len(valid_assets) > 0:
+st.markdown('<div class="panel">', unsafe_allow_html=True)
 
-    total_value = sum(a["value"] for a in valid_assets)
-    total_cost = sum(a["cost"] for a in valid_assets)
+st.subheader("PERFORMANCE")
 
-    pnl = total_value - total_cost
-    pnl_pct = (pnl / total_cost) * 100 if total_cost > 0 else 0
+if portfolio:
 
-    st.subheader("📊 Portfolio Summary")
+    tick_list = [t for t, q in portfolio]
 
-    c1, c2, c3 = st.columns(3)
+    df = yf.download(tick_list, period="1mo", progress=False)["Close"]
 
-    c1.markdown(f"<div class='metric-box'><h3>Total Value</h3><h2>${total_value:,.2f}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-box'><h3>PnL</h3><h2>${pnl:,.2f}</h2></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-box'><h3>PnL %</h3><h2>{pnl_pct:.2f}%</h2></div>", unsafe_allow_html=True)
+    if isinstance(df, pd.Series):
+        df = df.to_frame()
 
-    tick_list = [a["ticker"] for a in valid_assets]
-    start_date = min(a["date"] for a in valid_assets)
-
-    price_data = yf.download(tick_list, start=start_date, progress=False)["Close"]
-
-    if isinstance(price_data, pd.Series):
-        price_data = price_data.to_frame()
-
-    portfolio_value = pd.DataFrame(index=price_data.index)
-
-    for a in valid_assets:
-        if a["ticker"] in price_data.columns:
-            portfolio_value[a["ticker"]] = price_data[a["ticker"]] * a["quantity"]
-
-    portfolio_value["Total"] = portfolio_value.sum(axis=1)
-
-    sp500 = yf.download("^GSPC", start=start_date, progress=False)["Close"]
-
-    portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
-    sp500_norm = sp500 / sp500.iloc[0] * 100
+    norm = df / df.iloc[0] * 100
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(x=portfolio_norm.index, y=portfolio_norm, name="Portfolio"))
-    fig.add_trace(go.Scatter(x=sp500_norm.index, y=sp500_norm, name="S&P 500"))
+    for col in norm.columns:
+        fig.add_trace(go.Scatter(x=norm.index, y=norm[col], name=col))
 
-    fig.update_layout(template="plotly_dark", height=400)
+    fig.update_layout(template="plotly_dark")
 
     st.plotly_chart(fig, use_container_width=True)
 
-else:
-    st.warning("Geçerli veri yok")
+st.markdown('</div>', unsafe_allow_html=True)
