@@ -6,30 +6,44 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 
-# -------------------------
-# PAGE CONFIG + BLOOMBERG STYLE
-# -------------------------
 st.set_page_config(layout="wide")
 
+# 🔥 FORCE TERMINAL THEME
 st.markdown("""
 <style>
-.stApp {
-    background-color: #0a0a0a;
-    color: #00ff9f;
-    font-family: monospace;
+html, body, [class*="css"]  {
+    background-color: #000000 !important;
+    color: #00FF9F !important;
+    font-family: monospace !important;
+}
+.block-container {
+    background-color: #000000 !important;
 }
 section[data-testid="stSidebar"] {
-    background-color: #111;
+    background-color: #0a0a0a !important;
+}
+h1, h2, h3, h4, h5, h6, p, div {
+    color: #00FF9F !important;
+}
+[data-testid="stDataFrame"] {
+    background-color: #0a0a0a !important;
+    color: #00FF9F !important;
+}
+input, textarea {
+    background-color: #111 !important;
+    color: #00FF9F !important;
+}
+button {
+    background-color: #111 !important;
+    color: #00FF9F !important;
+    border: 1px solid #00FF9F !important;
 }
 .panel {
-    background-color: #111;
+    background-color: #0a0a0a;
     padding: 15px;
-    border-radius: 8px;
-    border: 1px solid #222;
+    border-radius: 10px;
+    border: 1px solid #00FF9F;
     margin-bottom: 15px;
-}
-h1, h2, h3 {
-    color: #00ff9f;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -37,16 +51,11 @@ h1, h2, h3 {
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# SIDEBAR (SEARCH + FILTER)
+# SIDEBAR
 # -------------------------
 st.sidebar.title("🔎 Terminal Controls")
-
 search = st.sidebar.text_input("Search Ticker")
-
-asset_filter = st.sidebar.selectbox(
-    "Asset Type",
-    ["All", "Stock", "Crypto", "Bond"]
-)
+asset_filter = st.sidebar.selectbox("Asset Type", ["All", "Stock", "Crypto", "Bond"])
 
 # -------------------------
 # ASSETS
@@ -73,7 +82,7 @@ bonds = [
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# MARKET DATA
+# DATA
 # -------------------------
 all_data = {}
 
@@ -87,13 +96,10 @@ with st.spinner("Market data yükleniyor..."):
             continue
 
 # -------------------------
-# LAYOUT
+# MARKET + HEATMAP
 # -------------------------
 col1, col2 = st.columns([2,1])
 
-# -------------------------
-# MARKET PANEL
-# -------------------------
 with col1:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
 
@@ -113,7 +119,6 @@ with col1:
             lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
         )
 
-        # FILTERS
         if asset_filter != "All":
             df = df[df["Asset Type"] == asset_filter]
 
@@ -125,25 +130,19 @@ with col1:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------------
-# HEATMAP PANEL
-# -------------------------
 with col2:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
 
-    if len(all_data) > 0:
-        heat_df = df.copy()
-
+    if len(all_data) > 0 and not df.empty:
         fig = px.treemap(
-            heat_df,
+            df,
             path=["Asset Type", "Ticker"],
             values="Price",
             color="1D %",
             color_continuous_scale="RdYlGn"
         )
-
         fig.update_layout(template="plotly_dark", margin=dict(t=20,l=0,r=0,b=0))
-        st.subheader("🔥 Market Heatmap")
+        st.subheader("🔥 Heatmap")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -158,21 +157,21 @@ st.subheader("💼 Add Portfolio")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = []
 
-col1, col2, col3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
-with col1:
-    ticker = st.text_input("Ticker")
+with c1:
+    ticker = st.text_input("Ticker").upper().strip()
 
-with col2:
+with c2:
     date = st.date_input("Buy Date")
 
-with col3:
+with c3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
     if ticker and quantity > 0:
         st.session_state.portfolio.append({
-            "ticker": ticker.upper(),
+            "ticker": ticker,
             "date": pd.to_datetime(date),
             "quantity": quantity
         })
@@ -191,7 +190,6 @@ for asset in portfolio:
 
     try:
         hist = yf.download(t, start=d - pd.Timedelta(days=10), end=d + pd.Timedelta(days=10), progress=False)
-
         if hist.empty:
             continue
 
@@ -222,7 +220,6 @@ if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
-
     pnl = total_value - total_cost
 
     st.subheader("📊 Portfolio Summary")
@@ -234,7 +231,6 @@ if len(valid_assets) > 0:
 
     fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
     fig.update_layout(template="plotly_dark")
-
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
