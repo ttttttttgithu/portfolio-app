@@ -7,6 +7,67 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
+# MANUAL PORTFOLIO BUILDER (TOP)
+# -------------------------
+st.subheader("🛠️ Manual Portfolio Builder")
+
+if "manual_portfolio" not in st.session_state:
+    st.session_state.manual_portfolio = []
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    asset_name = st.text_input("Asset Name (örn: AAPL, BTC)")
+
+with col2:
+    buy_price_manual = st.number_input("Buy Price", min_value=0.0)
+
+with col3:
+    quantity_manual = st.number_input("Quantity ", min_value=0.0)
+
+if st.button("Add Manual Asset"):
+    if asset_name != "" and buy_price_manual > 0 and quantity_manual > 0:
+        st.session_state.manual_portfolio.append({
+            "name": asset_name.upper(),
+            "price": buy_price_manual,
+            "quantity": quantity_manual
+        })
+        st.success("Manual asset eklendi!")
+
+manual_assets = st.session_state.manual_portfolio
+
+if len(manual_assets) > 0:
+
+    st.subheader("📋 Manual Portfolio")
+
+    data = []
+    total_value_manual = 0
+
+    for a in manual_assets:
+        value = a["price"] * a["quantity"]
+        total_value_manual += value
+
+        data.append({
+            "Asset": a["name"],
+            "Price": a["price"],
+            "Quantity": a["quantity"],
+            "Value": value
+        })
+
+    df_manual = pd.DataFrame(data)
+    st.dataframe(df_manual)
+
+    st.write(f"**Total Value: ${total_value_manual:,.2f}**")
+
+    weights = [row["Value"] / total_value_manual for row in data]
+    labels = [row["Asset"] for row in data]
+
+    fig3, ax3 = plt.subplots(figsize=(4,4))
+    ax3.pie(weights, labels=labels, autopct='%1.1f%%')
+    ax3.set_title("Portfolio Allocation")
+    st.pyplot(fig3)
+
+# -------------------------
 # MARKET OVERVIEW (75 ASSET - FIXED)
 # -------------------------
 
@@ -31,7 +92,6 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -247,4 +307,3 @@ if len(valid_assets) > 0:
 
 else:
     st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
-
