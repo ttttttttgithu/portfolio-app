@@ -3,79 +3,127 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.title("📊 Portfolio Analyzer (Offline Test)")
+st.set_page_config(page_title="Portfolio Analyzer", layout="wide")
+
+st.title("📊 Portfolio Analyzer (Offline Working Version)")
 
 # -------------------------
-# FAKE DATA (GARANTİLİ)
+# FAKE MARKET DATA
 # -------------------------
 np.random.seed(42)
 
-dates = pd.date_range(end=pd.Timestamp.today(), periods=60)
+dates = pd.date_range(end=pd.Timestamp.today(), periods=120)
 
-data = {
-    "AAPL": 150 + np.cumsum(np.random.randn(60)),
-    "MSFT": 300 + np.cumsum(np.random.randn(60)),
-    "TSLA": 200 + np.cumsum(np.random.randn(60)),
-}
+def generate_price(start):
+    return start + np.cumsum(np.random.normal(0, 1, len(dates)))
 
-df = pd.DataFrame(data, index=dates)
+prices = pd.DataFrame({
+    "AAPL": generate_price(150),
+    "MSFT": generate_price(300),
+    "TSLA": generate_price(200),
+    "NVDA": generate_price(400),
+    "BTC": generate_price(30000),
+}, index=dates)
 
 # -------------------------
 # MARKET OVERVIEW
 # -------------------------
+st.subheader("📈 Market Overview")
+
 rows = []
 
-for col in df.columns:
-    close = df[col]
+for col in prices.columns:
+    close = prices[col]
 
     price = close.iloc[-1]
-    r1d = (close.iloc[-1]/close.iloc[-2]-1)*100
-    r1w = (close.iloc[-1]/close.iloc[-6]-1)*100
-    r1m = (close.iloc[-1]/close.iloc[-22]-1)*100
+    r1d = (close.iloc[-1] / close.iloc[-2] - 1) * 100
+    r1w = (close.iloc[-1] / close.iloc[-6] - 1) * 100
+    r1m = (close.iloc[-1] / close.iloc[-22] - 1) * 100
 
     rows.append({
         "Ticker": col,
-        "Price": price,
-        "1D %": r1d,
-        "1W %": r1w,
-        "1M %": r1m
+        "Price": round(price, 2),
+        "1D %": round(r1d, 2),
+        "1W %": round(r1w, 2),
+        "1M %": round(r1m, 2)
     })
 
 overview = pd.DataFrame(rows)
-
-st.subheader("📈 Market Overview")
-st.dataframe(overview)
+st.dataframe(overview, use_container_width=True)
 
 # -------------------------
-# PORTFOLIO
+# PORTFOLIO INPUT
 # -------------------------
 st.subheader("💼 Portfolio")
 
-portfolio = {
-    "AAPL": 10,
-    "MSFT": 5,
-    "TSLA": 2
-}
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = {}
 
-values = []
+col1, col2 = st.columns(2)
 
-for t, qty in portfolio.items():
-    price = df[t].iloc[-1]
-    values.append(price * qty)
+with col1:
+    ticker = st.selectbox("Select Asset", prices.columns)
 
-total = sum(values)
+with col2:
+    quantity = st.number_input("Quantity", min_value=0.0, step=1.0)
 
-st.write(f"Total Value: ${total:,.2f}")
+if st.button("Add / Update Asset"):
+    if quantity > 0:
+        st.session_state.portfolio[ticker] = quantity
+    elif ticker in st.session_state.portfolio:
+        del st.session_state.portfolio[ticker]
 
-# PIE
-fig, ax = plt.subplots()
-ax.pie(values, labels=portfolio.keys(), autopct="%1.1f%%")
-st.pyplot(fig)
+portfolio = st.session_state.portfolio
 
-# PERFORMANCE
-norm = df / df.iloc[0] * 100
+# -------------------------
+# PORTFOLIO CALC
+# -------------------------
+if portfolio:
 
-fig2, ax2 = plt.subplots()
-ax2.plot(norm)
-ax2.legend(df.columns)
-st.pyplot(fig2)
+    values = {}
+    for t, qty in portfolio.items():
+        price = prices[t].iloc[-1]
+        values[t] = price * qty
+
+    total_value = sum(values.values())
+
+    st.subheader("📊 Portfolio Summary")
+    c1, c2 = st.columns(2)
+
+    c1.metric("Total Value", f"${total_value:,.2f}")
+    c2.metric("Number of Assets", len(portfolio))
+
+    # -------------------------
+    # PIE CHART
+    # -------------------------
+    fig1, ax1 = plt.subplots()
+    ax1.pie(values.values(), labels=values.keys(), autopct="%1.1f%%")
+    ax1.set_title("Portfolio Allocation")
+    st.pyplot(fig1)
+
+    # -------------------------
+    # PERFORMANCE
+    # -------------------------
+    st.subheader("📈 Portfolio Performance")
+
+    portfolio_series = pd.Series(0, index=prices.index)
+
+    for t, qty in portfolio.items():
+        portfolio_series += prices[t] * qty
+
+    normalized = portfolio_series / portfolio_series.iloc[0] * 100
+
+    fig2, ax2 = plt.subplots()
+    ax2.plot(normalized, label="Portfolio")
+    ax2.set_title("Normalized Performance")
+    ax2.legend()
+    st.pyplot(fig2)
+
+else:
+    st.info("Portföye asset ekle")
+
+# -------------------------
+# DEBUG INFO
+# -------------------------
+st.subheader("🛠 Debug Info")
+st.write("Bu versiyon internet kullanmaz → çalışıyorsa sistemin OK")
