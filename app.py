@@ -13,53 +13,69 @@ bonds = ["TLT","IEF","BND"]
 
 ALL_TICKERS = stocks + crypto + bonds
 
+# -------------------------
+# SAFE DOWNLOAD (NO MULTIINDEX BUG)
+# -------------------------
 @st.cache_data
 def load_prices():
-    df = yf.download(
-        ALL_TICKERS,
-        period="3mo",
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-        threads=False
-    )["Close"]
+    data = {}
 
-    if isinstance(df, pd.Series):
-        df = df.to_frame()
+    for t in ALL_TICKERS:
+        try:
+            df = yf.download(
+                t,
+                period="3mo",
+                interval="1d",
+                auto_adjust=True,
+                progress=False
+            )
 
-    df = df.sort_index()
+            if not df.empty and "Close" in df:
+                s = df["Close"].dropna()
+                if len(s) > 5:
+                    data[t] = s
 
-    # 🔥 CRITICAL: align all dates + fill gaps
-    full_index = pd.date_range(df.index.min(), df.index.max(), freq="D")
-    df = df.reindex(full_index)
-    df = df.ffill().bfill()
+        except:
+            continue
 
-    # drop columns that still fail
-    df = df.dropna(axis=1, how="all")
+    if not data:
+        return pd.DataFrame()
 
-    return df
+    prices = pd.concat(data, axis=1)
+
+    # flatten columns
+    prices.columns = prices.columns.get_level_values(0)
+
+    # 🔥 force same timeline
+    full_index = pd.date_range(prices.index.min(), prices.index.max(), freq="D")
+    prices = prices.reindex(full_index)
+
+    # 🔥 fill ALL gaps (critical)
+    prices = prices.ffill().bfill()
+
+    return prices
 
 prices = load_prices()
 
 # -------------------------
-# MARKET
+# MARKET OVERVIEW
 # -------------------------
 if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    def safe_ret(p):
-        r = prices.pct_change(p)
-        if len(r) > p:
-            return r.iloc[-1] * 100
-        return pd.Series(index=prices.columns, data=np.nan)
+    def calc_return(days):
+        if len(prices) > days:
+            return (prices.iloc[-1] / prices.iloc[-1 - days] - 1) * 100
+        else:
+            return pd.Series(index=prices.columns, data=np.nan)
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
         "Price": latest,
-        "1D %": safe_ret(1),
-        "1W %": safe_ret(5),
-        "1M %": safe_ret(21)
+        "1D %": calc_return(1),
+        "1W %": calc_return(5),
+        "1M %": calc_return(21)
     }).reset_index(drop=True)
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
@@ -105,7 +121,7 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# PORTFOLIO CALC
+# PORTFOLIO CALCULATION
 # -------------------------
 valid_assets = []
 
@@ -116,9 +132,9 @@ for asset in portfolio:
     if t not in prices.columns:
         continue
 
-    s = prices[t].dropna()
+    s = prices[t]
 
-    if len(s) < 2:
+    if s.isna().all():
         continue
 
     try:
@@ -167,7 +183,7 @@ if len(valid_assets) > 0:
     st.pyplot(fig)
 
     tick_list = [a["ticker"] for a in valid_assets]
-    port_df = prices[tick_list].copy()
+    port_df = prices[tick_list]
 
     quantities = np.array([a["quantity"] for a in valid_assets])
     portfolio_series = (port_df * quantities).sum(axis=1)
