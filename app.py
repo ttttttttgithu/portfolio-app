@@ -2,14 +2,41 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
+# -------------------------
+# PAGE CONFIG + STYLE
+# -------------------------
+st.set_page_config(page_title="Portfolio Analyzer", page_icon="📊", layout="wide")
+
+st.markdown("""
+<style>
+body {background-color: #0E1117; color: white;}
+.metric-box {
+    background-color: #1c1f26;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+}
+h1, h2, h3 {color: #00FFAA;}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (75 ASSET - FIXED)
+# SIDEBAR
 # -------------------------
+st.sidebar.title("📊 Controls")
+selected_type = st.sidebar.selectbox(
+    "Asset Type Filter",
+    ["All", "Stock", "Crypto", "Bond"]
+)
 
+# -------------------------
+# ASSETS
+# -------------------------
 stocks = [
 "AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","BRK-B","JPM","JNJ",
 "V","PG","UNH","HD","MA","DIS","ADBE","NFLX","KO","PEP",
@@ -31,7 +58,9 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
+# -------------------------
+# MARKET DATA
+# -------------------------
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -63,8 +92,11 @@ if len(all_data) > 0:
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
+    if selected_type != "All":
+        df = df[df["Asset Type"] == selected_type]
+
     st.subheader("📈 Market Overview")
-    st.dataframe(df)
+    st.dataframe(df, use_container_width=True)
 
 # -------------------------
 # PORTFOLIO INPUT
@@ -77,26 +109,21 @@ if "portfolio" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ticker = st.text_input("Ticker (örn: AAPL)")
-    ticker = ticker.replace('"', '').replace("'", "").strip().upper()
+    ticker = st.text_input("Ticker").upper().strip()
 
 with col2:
     date = st.date_input("Buy Date")
-
-    if date > pd.Timestamp.today().date():
-        date = pd.Timestamp.today().date()
 
 with col3:
     quantity = st.number_input("Quantity", min_value=0.0)
 
 if st.button("Add Asset"):
-    if ticker != "" and quantity > 0:
+    if ticker and quantity > 0:
         st.session_state.portfolio.append({
             "ticker": ticker,
             "date": pd.to_datetime(date),
             "quantity": quantity
         })
-        st.success("Asset eklendi!")
 
 portfolio = st.session_state.portfolio
 
@@ -119,32 +146,8 @@ for asset in portfolio:
         hist["diff"] = (hist["Date"] - d).abs()
         row = hist.loc[hist["diff"].idxmin()]
 
-        buy_price = row["Close"]
-
-        if isinstance(buy_price, pd.Series):
-            buy_price = buy_price.iloc[0]
-
-        if pd.isna(buy_price):
-            continue
-
-        buy_price = float(buy_price)
-
-        current_data = yf.download(t, period="1d", progress=False)
-
-        if current_data.empty:
-            continue
-
-        cp = current_data["Close"].dropna()
-
-        if cp.empty:
-            continue
-
-        current_price = cp.iloc[-1]
-
-        if isinstance(current_price, pd.Series):
-            current_price = current_price.iloc[0]
-
-        current_price = float(current_price)
+        buy_price = float(row["Close"])
+        current_price = float(yf.download(t, period="1d", progress=False)["Close"].iloc[-1])
 
     except:
         continue
@@ -154,8 +157,6 @@ for asset in portfolio:
 
     asset["value"] = value
     asset["cost"] = cost
-    asset["buy_price"] = buy_price
-    asset["current_price"] = current_price
 
     valid_assets.append(asset)
 
@@ -167,29 +168,21 @@ if len(valid_assets) > 0:
     total_value = sum(a["value"] for a in valid_assets)
     total_cost = sum(a["cost"] for a in valid_assets)
 
-    total_pnl = total_value - total_cost
-    total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
+    pnl = total_value - total_cost
+    pnl_pct = (pnl / total_cost) * 100 if total_cost > 0 else 0
 
     st.subheader("📊 Portfolio Summary")
+
     c1, c2, c3 = st.columns(3)
 
-    c1.metric("Total Value", f"${total_value:,.2f}")
-    c2.metric("PnL ($)", f"${total_pnl:,.2f}")
-    c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
+    c1.markdown(f"<div class='metric-box'><h3>Total Value</h3><h2>${total_value:,.2f}</h2></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-box'><h3>PnL</h3><h2>${pnl:,.2f}</h2></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='metric-box'><h3>PnL %</h3><h2>{pnl_pct:.2f}%</h2></div>", unsafe_allow_html=True)
 
-    for a in valid_assets:
-        a["weight"] = a["value"] / total_value
-
-    fig1, ax1 = plt.subplots(figsize=(4,4))
-    ax1.pie([a["weight"] for a in valid_assets],
-            labels=[a["ticker"] for a in valid_assets],
-            autopct='%1.1f%%')
-    st.pyplot(fig1)
-
-    tickers = [a["ticker"] for a in valid_assets]
+    tick_list = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
-    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
+    price_data = yf.download(tick_list, start=start_date, progress=False)["Close"]
 
     if isinstance(price_data, pd.Series):
         price_data = price_data.to_frame()
@@ -207,43 +200,14 @@ if len(valid_assets) > 0:
     portfolio_norm = portfolio_value["Total"] / portfolio_value["Total"].iloc[0] * 100
     sp500_norm = sp500 / sp500.iloc[0] * 100
 
-    fig2, ax2 = plt.subplots(figsize=(6,3))
-    ax2.plot(portfolio_norm, label="Portfolio")
-    ax2.plot(sp500_norm, label="S&P 500")
-    ax2.legend()
-    st.pyplot(fig2)
+    fig = go.Figure()
 
-    portfolio_returns = portfolio_value["Total"].pct_change()
-    sp500_returns = sp500.pct_change()
+    fig.add_trace(go.Scatter(x=portfolio_norm.index, y=portfolio_norm, name="Portfolio"))
+    fig.add_trace(go.Scatter(x=sp500_norm.index, y=sp500_norm, name="S&P 500"))
 
-    df_returns = pd.concat([portfolio_returns, sp500_returns], axis=1).dropna()
-    df_returns.columns = ["portfolio", "market"]
+    fig.update_layout(template="plotly_dark", height=400)
 
-    if len(df_returns) > 2:
-
-        cov = df_returns["portfolio"].cov(df_returns["market"])
-        var = df_returns["market"].var()
-
-        beta = cov / var if var != 0 else 0
-
-        expected_return = df_returns["portfolio"].mean() * 252
-        volatility = df_returns["portfolio"].std() * np.sqrt(252)
-
-        risk_free_rate = 0.02
-        market_return = df_returns["market"].mean() * 252
-
-        capm = risk_free_rate + beta * (market_return - risk_free_rate)
-        alpha = expected_return - capm
-
-        st.subheader("📉 Risk Metrics")
-        st.write(f"Expected Return: {expected_return:.2%}")
-        st.write(f"Volatility: {volatility:.2%}")
-        st.write(f"Beta: {beta:.2f}")
-        st.write(f"Alpha: {alpha:.2%}")
-        st.write(f"CAPM: {capm:.2%}")
-
-    else:
-        st.warning("Risk metrics hesaplamak için yeterli veri yok")
+    st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.warning("Geçerli veri yok. Ticker doğru mu kontrol et (örn: AAPL, BTC-USD)")
+    st.warning("Geçerli veri yok")
