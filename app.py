@@ -4,6 +4,35 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+# -------------------------
+# PAGE CONFIG + DARK THEME
+# -------------------------
+st.set_page_config(layout="wide")
+
+st.markdown("""
+<style>
+body {
+    background-color: #0E1117;
+    color: white;
+}
+
+.stApp {
+    background-color: #0E1117;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: white;
+}
+
+[data-testid="stMetric"] {
+    background-color: #111;
+    padding: 10px;
+    border-radius: 10px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
