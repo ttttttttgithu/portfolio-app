@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (FINAL FIX)
+# MARKET OVERVIEW (FIXED)
 # -------------------------
 
 stocks = [
@@ -31,40 +31,35 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK SEFERDE DATA ÇEK
-data = yf.download(tickers, period="1mo", group_by="ticker", progress=False)
+# 🔥 HER TICKER'I AYRI ÇEK (EN STABİL)
+close_prices = pd.DataFrame()
 
-if not data.empty:
+for t in tickers:
+    try:
+        df_t = yf.download(t, period="3mo", progress=False)
 
-    close_prices = pd.DataFrame()
-
-    for t in tickers:
-        try:
-            if t in data.columns.levels[0]:
-                close = data[t]["Close"]
-                if not close.empty:
-                    close_prices[t] = close
-        except:
+        if df_t.empty:
             continue
 
-    # 🔥 boşluk doldur
-    close_prices = close_prices.ffill()
+        close = df_t["Close"].rename(t)
+        close_prices = pd.concat([close_prices, close], axis=1)
 
-    # 💥 KRİTİK FIX → tamamen boş olanları kaldır
-    close_prices = close_prices.dropna(axis=1, how="all")
+    except:
+        continue
 
-    # 💥 ekstra filtre (çok az veri olanları kaldır)
-    close_prices = close_prices.loc[:, close_prices.notna().sum() > 5]
+# boşluk doldur
+close_prices = close_prices.ffill()
+
+# çok az verili tickerları at
+close_prices = close_prices.dropna(axis=1, thresh=10)
+
+if not close_prices.empty:
 
     latest_prices = close_prices.iloc[-1]
 
     returns_1d = close_prices.pct_change(1).iloc[-1] * 100
     returns_1w = close_prices.pct_change(5).iloc[-1] * 100
     returns_1m = close_prices.pct_change(21).iloc[-1] * 100
-
-    returns_1d = returns_1d.fillna(0)
-    returns_1w = returns_1w.fillna(0)
-    returns_1m = returns_1m.fillna(0)
 
     df = pd.DataFrame({
         "Ticker": latest_prices.index,
@@ -136,7 +131,7 @@ for asset in portfolio:
 
         buy_price = float(row["Close"])
 
-        current_data = yf.download(t, period="1d", progress=False)
+        current_data = yf.download(t, period="5d", progress=False)
         current_price = float(current_data["Close"].dropna().iloc[-1])
 
     except:
@@ -179,13 +174,18 @@ if len(valid_assets) > 0:
     st.pyplot(fig1)
 
     # PERFORMANCE
-    tickers = [a["ticker"] for a in valid_assets]
+    tickers_port = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
-    price_data = yf.download(tickers, start=start_date, progress=False)["Close"]
+    price_data = pd.DataFrame()
 
-    if isinstance(price_data, pd.Series):
-        price_data = price_data.to_frame()
+    for t in tickers_port:
+        try:
+            df_t = yf.download(t, start=start_date, progress=False)
+            if not df_t.empty:
+                price_data[t] = df_t["Close"]
+        except:
+            continue
 
     portfolio_value = pd.DataFrame(index=price_data.index)
 
