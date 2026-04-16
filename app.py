@@ -14,39 +14,34 @@ bonds = ["TLT","IEF","BND"]
 ALL_TICKERS = stocks + crypto + bonds
 
 # -------------------------
-# LOAD DATA (ULTRA SAFE)
+# LOAD DATA (FINAL STABLE)
 # -------------------------
 @st.cache_data
 def load_prices():
-    frames = []
+    df = yf.download(
+        ALL_TICKERS,
+        period="3mo",
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+        threads=False
+    )
 
-    for t in ALL_TICKERS:
-        try:
-            df = yf.download(t, period="3mo", interval="1d", progress=False)
-
-            if df.empty or "Close" not in df:
-                continue
-
-            s = df["Close"].rename(t)
-            frames.append(s)
-
-        except:
-            continue
-
-    if not frames:
+    if df.empty:
         return pd.DataFrame()
 
-    prices = pd.concat(frames, axis=1)
+    # ALWAYS handle MultiIndex safely
+    if isinstance(df.columns, pd.MultiIndex):
+        close = df.xs("Close", level=1, axis=1)
+    else:
+        close = df["Close"].to_frame()
 
-    prices = prices.sort_index()
+    close = close.sort_index()
 
-    # normalize index (critical fix)
-    prices.index = pd.to_datetime(prices.index).normalize()
+    # 🔥 CRITICAL FIX: DO NOT CREATE FAKE DAYS
+    close = close.ffill()
 
-    # forward fill ONLY (no bfill → avoids fake data)
-    prices = prices.ffill()
-
-    return prices
+    return close
 
 prices = load_prices()
 
@@ -58,7 +53,7 @@ if not prices.empty:
     latest = prices.iloc[-1]
 
     def safe_ret(days):
-        out = []
+        result = []
         for col in prices.columns:
             s = prices[col].dropna()
 
@@ -67,9 +62,9 @@ if not prices.empty:
             else:
                 val = np.nan
 
-            out.append(val)
+            result.append(val)
 
-        return pd.Series(out, index=prices.columns)
+        return pd.Series(result, index=prices.columns)
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
@@ -118,13 +113,13 @@ if st.button("Add Asset"):
 portfolio = st.session_state.portfolio
 
 # -------------------------
-# PORTFOLIO CALC
+# PORTFOLIO CALCULATION
 # -------------------------
 valid_assets = []
 
 for asset in portfolio:
     t = asset["ticker"]
-    d = pd.to_datetime(asset["date"]).normalize()
+    d = pd.to_datetime(asset["date"])
 
     if t not in prices.columns:
         continue
@@ -134,14 +129,14 @@ for asset in portfolio:
     if len(s) < 2:
         continue
 
-    # strictly pick closest VALID date
-    try:
-        idx = np.argmin(np.abs(s.index - d))
-    except:
+    # only use REAL trading days (no fake nearest)
+    s = s[s.index <= d]
+
+    if s.empty:
         continue
 
-    buy_price = float(s.iloc[idx])
-    current_price = float(s.iloc[-1])
+    buy_price = float(s.iloc[-1])
+    current_price = float(prices[t].iloc[-1])
 
     if np.isnan(buy_price) or np.isnan(current_price):
         continue
@@ -187,7 +182,6 @@ if len(valid_assets) > 0:
     portfolio_series = (port_df * quantities).sum(axis=1)
 
     sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
-    sp500.index = pd.to_datetime(sp500.index).normalize()
 
     sp500 = sp500.reindex(portfolio_series.index).ffill()
 
