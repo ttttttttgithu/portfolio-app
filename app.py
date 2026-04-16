@@ -6,37 +6,23 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 
-st.set_page_config(layout="wide")
+# -------------------------
+# PAGE CONFIG
+# -------------------------
+st.set_page_config(layout="wide", page_title="Portfolio Terminal")
 
-# 🔥 FORCE TERMINAL THEME
+# -------------------------
+# FORCE EXTRA STYLE (DESTEK)
+# -------------------------
 st.markdown("""
 <style>
-html, body, [class*="css"]  {
-    background-color: #000000 !important;
-    color: #00FF9F !important;
-    font-family: monospace !important;
-}
-.block-container {
-    background-color: #000000 !important;
+.stApp {
+    background-color: #000000;
+    color: #00FF9F;
+    font-family: monospace;
 }
 section[data-testid="stSidebar"] {
-    background-color: #0a0a0a !important;
-}
-h1, h2, h3, h4, h5, h6, p, div {
-    color: #00FF9F !important;
-}
-[data-testid="stDataFrame"] {
-    background-color: #0a0a0a !important;
-    color: #00FF9F !important;
-}
-input, textarea {
-    background-color: #111 !important;
-    color: #00FF9F !important;
-}
-button {
-    background-color: #111 !important;
-    color: #00FF9F !important;
-    border: 1px solid #00FF9F !important;
+    background-color: #0a0a0a;
 }
 .panel {
     background-color: #0a0a0a;
