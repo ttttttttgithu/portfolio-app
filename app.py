@@ -14,62 +14,67 @@ bonds = ["TLT","IEF","BND"]
 ALL_TICKERS = stocks + crypto + bonds
 
 @st.cache_data
-def load_prices(tickers):
-    raw = yf.download(
-        tickers,
+def load_prices():
+    df = yf.download(
+        ALL_TICKERS,
         period="3mo",
         interval="1d",
         auto_adjust=True,
-        group_by="ticker",
         progress=False,
-        threads=True
-    )
+        threads=False
+    )["Close"]
 
-    frames = []
+    if isinstance(df, pd.Series):
+        df = df.to_frame()
 
-    if isinstance(raw.columns, pd.MultiIndex):
-        for t in tickers:
-            if (t, "Close") in raw.columns:
-                s = raw[(t, "Close")].rename(t)
-                frames.append(s)
-    else:
-        s = raw["Close"]
-        s.name = tickers[0]
-        frames.append(s)
+    df = df.sort_index()
 
-    df = pd.concat(frames, axis=1)
-
+    # 🔥 CRITICAL: align all dates + fill gaps
     full_index = pd.date_range(df.index.min(), df.index.max(), freq="D")
-    df = df.reindex(full_index).ffill().bfill()
+    df = df.reindex(full_index)
+    df = df.ffill().bfill()
+
+    # drop columns that still fail
+    df = df.dropna(axis=1, how="all")
 
     return df
 
-prices = load_prices(ALL_TICKERS)
+prices = load_prices()
 
+# -------------------------
+# MARKET
+# -------------------------
 if not prices.empty:
 
     latest = prices.iloc[-1]
 
-    def ret(p):
-        return prices.pct_change(p).iloc[-1] * 100
+    def safe_ret(p):
+        r = prices.pct_change(p)
+        if len(r) > p:
+            return r.iloc[-1] * 100
+        return pd.Series(index=prices.columns, data=np.nan)
 
     market_df = pd.DataFrame({
         "Ticker": prices.columns,
         "Price": latest,
-        "1D %": ret(1),
-        "1W %": ret(7),
-        "1M %": ret(30)
+        "1D %": safe_ret(1),
+        "1W %": safe_ret(5),
+        "1M %": safe_ret(21)
     }).reset_index(drop=True)
 
     market_df["Asset Type"] = market_df["Ticker"].apply(
         lambda x: "Stock" if x in stocks else ("Crypto" if x in crypto else "Bond")
     )
 
-    market_df = market_df.replace([np.inf, -np.inf], np.nan).dropna(subset=["Price"])
+    market_df = market_df.replace([np.inf, -np.inf], np.nan)
+    market_df = market_df.dropna(subset=["Price"])
 
     st.subheader("📈 Market Overview")
     st.dataframe(market_df, use_container_width=True)
 
+# -------------------------
+# PORTFOLIO INPUT
+# -------------------------
 st.subheader("💼 Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -99,6 +104,9 @@ if st.button("Add Asset"):
 
 portfolio = st.session_state.portfolio
 
+# -------------------------
+# PORTFOLIO CALC
+# -------------------------
 valid_assets = []
 
 for asset in portfolio:
@@ -108,15 +116,21 @@ for asset in portfolio:
     if t not in prices.columns:
         continue
 
-    series = prices[t]
+    s = prices[t].dropna()
 
-    if series.isna().all():
+    if len(s) < 2:
         continue
 
-    idx = series.index.get_indexer([d], method="nearest")[0]
+    try:
+        idx = s.index.get_indexer([d], method="nearest")[0]
+    except:
+        continue
 
-    buy_price = float(series.iloc[idx])
-    current_price = float(series.iloc[-1])
+    buy_price = float(s.iloc[idx])
+    current_price = float(s.iloc[-1])
+
+    if np.isnan(buy_price) or np.isnan(current_price):
+        continue
 
     value = current_price * asset["quantity"]
     cost = buy_price * asset["quantity"]
@@ -126,6 +140,9 @@ for asset in portfolio:
 
     valid_assets.append(asset)
 
+# -------------------------
+# RESULTS
+# -------------------------
 if len(valid_assets) > 0:
 
     total_value = sum(a["value"] for a in valid_assets)
@@ -150,13 +167,15 @@ if len(valid_assets) > 0:
     st.pyplot(fig)
 
     tick_list = [a["ticker"] for a in valid_assets]
-    port_df = prices[tick_list]
+    port_df = prices[tick_list].copy()
 
-    weights = np.array([a["quantity"] for a in valid_assets])
-    portfolio_series = (port_df * weights).sum(axis=1)
+    quantities = np.array([a["quantity"] for a in valid_assets])
+    portfolio_series = (port_df * quantities).sum(axis=1)
 
     sp500 = yf.download("^GSPC", period="3mo", progress=False)["Close"]
-    sp500 = sp500.reindex(portfolio_series.index).ffill().bfill()
+
+    sp500 = sp500.reindex(portfolio_series.index)
+    sp500 = sp500.ffill().bfill()
 
     portfolio_norm = portfolio_series / portfolio_series.iloc[0] * 100
     sp_norm = sp500 / sp500.iloc[0] * 100
@@ -168,4 +187,4 @@ if len(valid_assets) > 0:
     st.pyplot(fig2)
 
 else:
-    st.info("Portföy boş")
+    st.warning("No valid portfolio data")
