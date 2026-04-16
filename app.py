@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# MARKET OVERVIEW (75 ASSET - FIXED)
+# MARKET OVERVIEW (STABLE 75)
 # -------------------------
 
 stocks = [
@@ -18,9 +18,9 @@ stocks = [
 
 crypto = [
 "BTC-USD","ETH-USD","BNB-USD","SOL-USD","XRP-USD","ADA-USD","DOGE-USD",
-"DOT-USD","MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD",
-"LINK-USD","ATOM-USD","XLM-USD","ETC-USD","ICP-USD","FIL-USD",
-"APT-USD","ARB-USD","OP-USD","NEAR-USD","ALGO-USD","VET-USD"
+"MATIC-USD","LTC-USD","TRX-USD","AVAX-USD","SHIB-USD","LINK-USD",
+"ATOM-USD","XLM-USD","ETC-USD","FIL-USD","HBAR-USD","EGLD-USD",
+"XTZ-USD","THETA-USD","AAVE-USD","EOS-USD","NEO-USD","KSM-USD"
 ]
 
 bonds = [
@@ -31,7 +31,7 @@ bonds = [
 
 tickers = stocks + crypto + bonds
 
-# 🔥 TEK TEK VERİ ÇEKME (KRİTİK FIX)
+# 🔥 TEK TEK ÇEKME (EN STABİL YÖNTEM)
 all_data = {}
 
 with st.spinner("Market data yükleniyor..."):
@@ -177,6 +177,7 @@ if len(valid_assets) > 0:
     c2.metric("PnL ($)", f"${total_pnl:,.2f}")
     c3.metric("PnL (%)", f"{total_pnl_pct:.2f}%")
 
+    # PIE
     for a in valid_assets:
         a["weight"] = a["value"] / total_value
 
@@ -186,6 +187,7 @@ if len(valid_assets) > 0:
             autopct='%1.1f%%')
     st.pyplot(fig1)
 
+    # PERFORMANCE
     tickers = [a["ticker"] for a in valid_assets]
     start_date = min(a["date"] for a in valid_assets)
 
@@ -213,6 +215,7 @@ if len(valid_assets) > 0:
     ax2.legend()
     st.pyplot(fig2)
 
+    # RISK METRICS
     portfolio_returns = portfolio_value["Total"].pct_change()
     sp500_returns = sp500.pct_change()
 
