@@ -7,15 +7,27 @@ import matplotlib.pyplot as plt
 st.title("📊 Portfolio Analyzer")
 
 # -------------------------
-# CACHE
+# SAFE DATA FETCH
 # -------------------------
 @st.cache_data(ttl=600)
-def get_data(ticker, period="3mo"):
+def get_data_safe(ticker, period="3mo"):
     try:
         df = yf.download(ticker, period=period, progress=False)
-        return df
+        if not df.empty and "Close" in df:
+            return df
     except:
-        return pd.DataFrame()
+        pass
+
+    # 🔥 fallback
+    try:
+        t = yf.Ticker(ticker)
+        df = t.history(period=period)
+        if not df.empty and "Close" in df:
+            return df
+    except:
+        pass
+
+    return pd.DataFrame()
 
 # -------------------------
 # ASSETS
@@ -42,15 +54,14 @@ bonds = [
 tickers = stocks + crypto + bonds
 
 # -------------------------
-# MARKET OVERVIEW (ROBUST)
+# MARKET OVERVIEW
 # -------------------------
-
 rows = []
 
 for t in tickers:
-    df_t = get_data(t)
+    df_t = get_data_safe(t)
 
-    if df_t.empty or "Close" not in df_t:
+    if df_t.empty:
         continue
 
     close = df_t["Close"].dropna()
@@ -85,7 +96,6 @@ st.dataframe(df)
 # -------------------------
 # PORTFOLIO INPUT
 # -------------------------
-
 st.subheader("💼 Add Portfolio")
 
 if "portfolio" not in st.session_state:
@@ -115,14 +125,13 @@ portfolio = st.session_state.portfolio
 # -------------------------
 # PORTFOLIO CALC
 # -------------------------
-
 valid_assets = []
 
 for asset in portfolio:
     t = asset["ticker"]
     d = asset["date"]
 
-    df_t = get_data(t, period="1y")
+    df_t = get_data_safe(t, period="1y")
 
     if df_t.empty:
         continue
@@ -147,7 +156,6 @@ for asset in portfolio:
 # -------------------------
 # RESULTS
 # -------------------------
-
 if valid_assets:
 
     total_value = sum(a["value"] for a in valid_assets)
@@ -163,7 +171,6 @@ if valid_assets:
     c2.metric("PnL", f"${pnl:,.2f}")
     c3.metric("PnL %", f"{pnl_pct:.2f}%")
 
-    # PIE
     weights = [a["value"]/total_value for a in valid_assets]
 
     fig, ax = plt.subplots()
